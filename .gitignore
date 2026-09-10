@@ -1,0 +1,12 @@
+node_modules/
+dist/
+data/
+data-*/
+.env
+.env.bak.*
+secrets/*
+!secrets/.gitignore
+!secrets/.gitkeep
+*.log
+*.tar.gz
+*.sqlite*
