@@ -100,7 +100,7 @@ describe('trang chỉnh sửa trực quan (mock)', () => {
     expect(shell.status).toBe(200);
     const shellHtml = await shell.text();
     expect(shellHtml).toContain(`/sites/${id}/editor/page/${home.id}`);
-    expect(shellHtml).toContain(`location.href&#39;/sites/${id}/editor?page=&#39;`.replace('href&', 'href=&'));
+    expect(shellHtml).toContain(`location.href=&#39;/sites/${id}/editor?page=&#39;`);
     expect(shellHtml).not.toContain('{site.id}');
 
     const page = await app.request(`/sites/${id}/editor/page/${home.id}`, { headers: { cookie } });
