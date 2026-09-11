@@ -98,7 +98,10 @@ describe('trang chỉnh sửa trực quan (mock)', () => {
 
     const shell = await app.request(`/sites/${id}/editor`, { headers: { cookie } });
     expect(shell.status).toBe(200);
-    expect(await shell.text()).toContain(`/sites/${id}/editor/page/${home.id}`);
+    const shellHtml = await shell.text();
+    expect(shellHtml).toContain(`/sites/${id}/editor/page/${home.id}`);
+    expect(shellHtml).toContain(`location.href='/sites/${id}/editor?page='`);
+    expect(shellHtml).not.toContain('{site.id}');
 
     const page = await app.request(`/sites/${id}/editor/page/${home.id}`, { headers: { cookie } });
     expect(page.status).toBe(200);

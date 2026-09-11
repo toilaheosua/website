@@ -28,7 +28,7 @@ export function EditorPage(props: { site: Site; pages: { id: number; title: stri
           <div class="muted small">Nhấp vào tiêu đề, đoạn văn, câu hỏi hay ảnh ngay trên trang để sửa. Xong bấm "Lưu và dựng lại" trên thanh công cụ trong trang.</div>
         </div>
         <div class="actions">
-          <select id="editor-page" style="width:auto" onchange="location.href='/sites/{site.id}/editor?page='+this.value">
+          <select id="editor-page" style="width:auto" onchange={`location.href='/sites/${site.id}/editor?page='+this.value`}>
             {props.pages.map((p) => (
               <option value={String(p.id)} selected={p.id === props.current}>
                 {p.kind === 'post' ? 'Bài: ' : ''}
