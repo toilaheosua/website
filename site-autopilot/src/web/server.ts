@@ -21,10 +21,10 @@ import { brandReplacementPairs, replaceTextInSite } from '../core/rename.js';
 import type { IntegrationView } from './views.js';
 import { adminUserName, checkPassword, hasAdminCredential, isAuthenticated, login, logout, passwordSource, requireAuth, sameOriginGuard, setAdminPassword, validateNewPassword } from './auth.js';
 import { LoginPage, Page, SetupPage, type Flash } from './layout.js';
-import { EditBriefForm, EntityForm, ImagesPage, JobsPage, LibraryPage, LogsPage, NewSiteForm, PageDetail, PagesList, SettingsPage, SiteDetail, SitesIndex } from './views.js';
+import { EditBriefForm, EntityForm, JobsPage, LibraryPage, LogsPage, NewSiteForm, PageDetail, PagesList, SettingsPage, SiteDetail, SitesIndex } from './views.js';
 import { deleteLibraryFile, saveLibraryImage } from '../generator/library.js';
-import { collectImageSlots, slotLabel } from '../generator/images.js';
-import { parseList, slugify } from '../core/util.js';
+import { parseList } from '../core/util.js';
+import { mountEditor } from './editor.js';
 import { file, parseBriefEdit, parseEntity, parseGeneral, parseNewSite, parseWaf, str, type FormBody } from './forms.js';
 
 export interface WebDeps {
@@ -489,60 +489,8 @@ export function createApp(deps: WebDeps): Hono {
     if (!/\.(webp|png|jpe?g)$/i.test(name) || !fs.existsSync(file)) return c.notFound();
     return c.body(fs.readFileSync(file), 200, { 'Content-Type': 'image/webp', 'Cache-Control': 'private, max-age=3600' });
   });
-  app.get('/sites/:id/images', (c) => {
-    const site = siteOr404(c);
-    if (!site) return c.notFound();
-    if (!site.plan) {
-      flash(c, { type: 'warn', text: 'Site chưa có kế hoạch nội dung nên chưa có vị trí ảnh.' });
-      return c.redirect(`/sites/${site.id}`);
-    }
-    const pages = db.listPages(site.id);
-    const slots = collectImageSlots(pages, site.plan, site.brief.brandName).map((s) => {
-      const cur = db.getImage(site.id, s.key);
-      const { page, label } = slotLabel(s.key, pages, site.plan!);
-      return { key: s.key, page, label, current: cur ? { file: cur.file, provider: cur.provider, alt: cur.alt } : null };
-    });
-    return render(c, `Ảnh ${site.domain}`, 'sites', ImagesPage({ site, slots, library: db.listLibrary(site.id) }));
-  });
-  app.post('/sites/:id/images', async (c) => {
-    const site = siteOr404(c);
-    if (!site || !site.plan) return c.notFound();
-    const body = (await c.req.parseBody()) as FormBody;
-    const dirs = siteDirs(config.sitesDir, site.domain);
-    const pages = db.listPages(site.id);
-    let changed = 0;
-    const errors: string[] = [];
-    for (const [field, value] of Object.entries(body)) {
-      if (field.startsWith('upload:') && value instanceof File && value.size > 0) {
-        const key = field.slice('upload:'.length);
-        try {
-          const { page, label } = slotLabel(key, pages, site.plan);
-          const lib = await saveLibraryImage({ db, siteId: site.id, cacheDir: dirs.images, buffer: Buffer.from(await value.arrayBuffer()), alt: `${site.brief.brandName} ${label}`, tags: [slugify(page)], source: 'upload', nameHint: path.parse(value.name).name });
-          db.upsertImage({ site_id: site.id, key, provider: 'manual', provider_id: String(lib.id), query: null, file: lib.file, width: lib.width, height: lib.height, alt: lib.alt, credit: '', credit_url: '' });
-          changed++;
-        } catch (err) {
-          errors.push(`${key}: ${errorMessage(err)}`);
-        }
-        continue;
-      }
-      if (field.startsWith('slot:') && typeof value === 'string' && value) {
-        const key = field.slice('slot:'.length);
-        if (body[`upload:${key}`] instanceof File && (body[`upload:${key}`] as File).size > 0) continue;
-        if (value === 'none') {
-          db.upsertImage({ site_id: site.id, key, provider: 'none', provider_id: null, query: null, file: '', width: null, height: null, alt: '', credit: '', credit_url: '' });
-          changed++;
-          continue;
-        }
-        const lib = db.getLibraryImage(Number.parseInt(value, 10));
-        if (!lib || lib.site_id !== site.id) continue;
-        db.upsertImage({ site_id: site.id, key, provider: 'manual', provider_id: String(lib.id), query: null, file: lib.file, width: lib.width, height: lib.height, alt: lib.alt, credit: lib.credit, credit_url: '' });
-        changed++;
-      }
-    }
-    if (changed && site.site_path) db.enqueueJob('rebuild_deploy', site.id, null, { dedupe: true });
-    flash(c, { type: errors.length ? 'warn' : 'ok', text: `Đã cập nhật ${changed} vị trí ảnh${changed ? ', đang dựng lại và đưa lên host' : ''}.${errors.length ? ' Lỗi: ' + errors.join('; ') : ''}` });
-    return c.redirect(`/sites/${site.id}/images`);
-  });
+  /* ---------------- chỉnh sửa trực quan ---------------- */
+  mountEditor(app, { db, config, siteOr404, render: render as never, enqueueRebuild: (siteId) => db.enqueueJob('rebuild_deploy', siteId, null, { dedupe: true }) });
 
   /* ---------------- xem bản dựng cục bộ ---------------- */
   app.get('/sites/:id/preview/*', (c) => {

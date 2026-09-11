@@ -412,8 +412,8 @@ export function SiteDetail(props: { site: Site; steps: StepRow[]; defs: StepDef[
           <a class="btn secondary sm" href={`/sites/${site.id}/library`}>
             Kho ảnh thật
           </a>
-          <a class="btn secondary sm" href={`/sites/${site.id}/images`}>
-            Ảnh trên website
+          <a class="btn sm" href={`/sites/${site.id}/editor`} style="background:#16a34a;border-color:#16a34a">
+            Chỉnh sửa trực quan
           </a>
           <a class="btn sm" href={`/sites/${site.id}/entity`}>
             Entity SEO
@@ -891,113 +891,6 @@ export function LibraryPage(props: { site: Site; library: LibraryRow[]; usedFile
           </div>
         )}
       </div>
-    </>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Chọn ảnh từng vị trí                                                 */
-/* ------------------------------------------------------------------ */
-
-export interface SlotView {
-  key: string;
-  page: string;
-  label: string;
-  current: { file: string; provider: string; alt: string } | null;
-}
-
-export function ImagesPage(props: { site: Site; slots: SlotView[]; library: LibraryRow[] }) {
-  const { site, library } = props;
-  const fileUrl = (file: string) => `/sites/${site.id}/images/file/${file.split('/').pop()}`;
-  const groups = new Map<string, SlotView[]>();
-  for (const s of props.slots) groups.set(s.page, [...(groups.get(s.page) ?? []), s]);
-  const providerLabel: Record<string, string> = { manual: 'bạn chọn', library: 'kho ảnh, tự gán', pexels: 'ảnh stock', mock: 'ảnh mô phỏng', none: 'để trống' };
-  return (
-    <>
-      <div class="actions" style="justify-content:space-between;margin-bottom:14px">
-        <div>
-          <h1 style="margin:0">Ảnh trên website: {site.domain}</h1>
-          <div class="muted small">Mỗi vị trí chọn ảnh trong kho theo số thứ tự, hoặc tải ảnh mới thẳng vào vị trí đó. Ảnh bạn chọn được giữ nguyên, hệ thống không tự đổi kể cả khi gán lại ảnh hàng loạt.</div>
-        </div>
-        <div class="actions">
-          <a class="btn secondary sm" href={`/sites/${site.id}/library`}>
-            Kho ảnh thật
-          </a>
-          <a class="btn secondary sm" href={`/sites/${site.id}`}>
-            ← Quay lại site
-          </a>
-        </div>
-      </div>
-
-      <div class="card" style="margin-bottom:16px">
-        <h2>Kho ảnh ({library.length})</h2>
-        {library.length === 0 ? <p class="muted small">Chưa có ảnh trong kho. Bạn vẫn có thể tải ảnh thẳng vào từng vị trí bên dưới.</p> : null}
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
-          {library.map((img, i) => (
-            <figure style="margin:0;width:120px;text-align:center">
-              <img src={fileUrl(img.file)} alt={img.alt} style="width:120px;height:90px;object-fit:cover;border-radius:6px" loading="lazy" />
-              <figcaption class="small">
-                <b>#{i + 1}</b> {truncate(img.alt, 22)}
-              </figcaption>
-            </figure>
-          ))}
-        </div>
-      </div>
-
-      <form method="post" action={`/sites/${site.id}/images`} enctype="multipart/form-data">
-        {[...groups.entries()].map(([page, slots]) => (
-          <div class="card" style="margin-bottom:12px">
-            <h2>{page}</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Vị trí</th>
-                  <th>Đang dùng</th>
-                  <th>Chọn từ kho</th>
-                  <th>Hoặc tải ảnh mới</th>
-                </tr>
-              </thead>
-              <tbody>
-                {slots.map((s) => (
-                  <tr>
-                    <td>{s.label}</td>
-                    <td>
-                      {s.current && s.current.file ? (
-                        <div>
-                          <img src={fileUrl(s.current.file)} alt={s.current.alt} style="width:110px;height:76px;object-fit:cover;border-radius:6px" loading="lazy" />
-                          <div class="small muted">{providerLabel[s.current.provider] ?? s.current.provider}</div>
-                        </div>
-                      ) : (
-                        <span class="muted small">{s.current?.provider === 'none' ? 'Để trống (bạn chọn)' : 'Chưa có ảnh'}</span>
-                      )}
-                    </td>
-                    <td>
-                      <select name={`slot:${s.key}`}>
-                        <option value="">Giữ nguyên</option>
-                        <option value="none">Bỏ ảnh, để trống</option>
-                        {library.map((img, i) => (
-                          <option value={String(img.id)} selected={false}>
-                            #{i + 1} {truncate(img.alt, 40)}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      <input type="file" name={`upload:${s.key}`} accept="image/*" />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ))}
-        <div class="actions">
-          <button class="btn" type="submit">
-            Lưu ảnh và dựng lại
-          </button>
-          <span class="muted small">Ảnh tải mới được thêm vào kho và gán ngay vào vị trí đó.</span>
-        </div>
-      </form>
     </>
   );
 }

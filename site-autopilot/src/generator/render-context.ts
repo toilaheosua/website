@@ -110,6 +110,18 @@ export interface RenderContext {
   routes: RouteMap;
   year: number;
   buildDate: string;
+  /** true khi dựng trang cho Chỉnh sửa trực quan: thêm data-edit vào phần tử sửa được */
+  edit?: boolean;
+}
+
+/** Thuộc tính đánh dấu chữ thuần sửa được (chỉ ở chế độ chỉnh sửa). */
+export function ed(ctx: RenderContext, path: string): Record<string, string> {
+  return ctx.edit ? { 'data-edit': path } : {};
+}
+
+/** Thuộc tính đánh dấu khối markdown sửa được. */
+export function edMd(ctx: RenderContext, path: string): Record<string, string> {
+  return ctx.edit ? { 'data-edit-md': path } : {};
 }
 
 export function pageUrl(ctx: RenderContext, slug: string): string {

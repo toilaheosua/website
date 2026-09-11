@@ -5,7 +5,7 @@ import { buildBrandAssets } from './logo.js';
 import { copyImagesToOutput } from './images.js';
 import { siteCss, SITE_JS } from './site-css.js';
 import { ROUTES, UI_STRINGS, buildNav, type RenderContext } from './render-context.js';
-import { renderAbout, renderBlogIndex, renderContact, renderHome, renderNotFound, renderPost, renderServices, renderSimple } from './templates.js';
+import { renderNotFound, renderPage } from './templates.js';
 import { AppError } from '../core/errors.js';
 import { nowIso } from '../core/util.js';
 
@@ -25,32 +25,24 @@ export function siteDirs(sitesDir: string, domain: string) {
  * Dựng website tĩnh vào data/sites/<domain>/out từ dữ liệu trong DB.
  * Chạy lại bất kỳ lúc nào (đồng bộ Entity, thêm bài, đổi theme).
  */
-export async function buildSite(input: { db: Db; site: Site; sitesDir: string; uploadsDir: string; log?: (m: string, d?: unknown) => void }): Promise<BuildResult> {
+/**
+ * Ngữ cảnh dựng trang cho một site: theme, bộ nhận diện, ảnh, điều hướng.
+ * Dùng chung cho dựng toàn bộ site và cho Chỉnh sửa trực quan (edit = true thêm data-edit vào HTML).
+ */
+export async function createRenderContext(input: { db: Db; site: Site; sitesDir: string; uploadsDir: string; edit?: boolean }): Promise<{ ctx: RenderContext; outDir: string; imagesDir: string }> {
   const { db, site } = input;
   if (!site.plan) throw new AppError('Site chưa có kế hoạch nội dung (gen_plan chưa chạy)');
   if (!site.theme) throw new AppError('Site chưa có theme');
   const pages = db.listPages(site.id).filter((p) => p.status === 'published');
-  if (!pages.some((p) => p.kind === 'home')) throw new AppError('Site chưa có trang chủ (gen_content chưa chạy)');
-
   const dirs = siteDirs(input.sitesDir, site.domain);
-  const outDir = dirs.out;
-  fs.rmSync(outDir, { recursive: true, force: true });
-  fs.mkdirSync(path.join(outDir, 'assets', 'css'), { recursive: true });
-  fs.mkdirSync(path.join(outDir, 'assets', 'js'), { recursive: true });
-
-  const warnings: string[] = [];
+  fs.mkdirSync(dirs.out, { recursive: true });
   const language = site.brief.language;
-  const siteUrl = `https://${site.domain}`;
   const uploadedLogo = site.logo_file ? path.join(input.uploadsDir, site.logo_file) : null;
-  const brand = await buildBrandAssets({ brandName: site.brief.brandName, tagline: site.plan.tagline, theme: site.theme, uploadedLogoPath: uploadedLogo, outDir });
-
+  const brand = await buildBrandAssets({ brandName: site.brief.brandName, tagline: site.plan.tagline, theme: site.theme, uploadedLogoPath: uploadedLogo, outDir: dirs.out });
   const images = new Map(db.listImages(site.id).filter((i) => i.file && i.provider !== 'none').map((i) => [i.key, i]));
-  const copied = copyImagesToOutput(db, site.id, dirs.images, outDir);
-  if (copied < images.size) warnings.push(`Thiếu ${images.size - copied} ảnh trong cache, trang sẽ bỏ trống vị trí đó`);
-
   const base: Omit<RenderContext, 'nav'> = {
     site,
-    siteUrl,
+    siteUrl: `https://${site.domain}`,
     theme: site.theme,
     brand,
     plan: site.plan,
@@ -62,8 +54,27 @@ export async function buildSite(input: { db: Db; site: Site; sitesDir: string; u
     routes: ROUTES[language],
     year: new Date().getFullYear(),
     buildDate: nowIso(),
+    edit: input.edit,
   };
-  const ctx: RenderContext = { ...base, nav: buildNav(base) };
+  return { ctx: { ...base, nav: buildNav(base) }, outDir: dirs.out, imagesDir: dirs.images };
+}
+
+export async function buildSite(input: { db: Db; site: Site; sitesDir: string; uploadsDir: string; log?: (m: string, d?: unknown) => void }): Promise<BuildResult> {
+  const { db, site } = input;
+  if (!site.plan) throw new AppError('Site chưa có kế hoạch nội dung (gen_plan chưa chạy)');
+  if (!site.theme) throw new AppError('Site chưa có theme');
+  const dirs = siteDirs(input.sitesDir, site.domain);
+  const outDir = dirs.out;
+  fs.rmSync(outDir, { recursive: true, force: true });
+  fs.mkdirSync(path.join(outDir, 'assets', 'css'), { recursive: true });
+  fs.mkdirSync(path.join(outDir, 'assets', 'js'), { recursive: true });
+
+  const { ctx } = await createRenderContext({ db, site, sitesDir: input.sitesDir, uploadsDir: input.uploadsDir });
+  const { pages, images, brand, siteUrl } = ctx;
+  if (!pages.some((p) => p.kind === 'home')) throw new AppError('Site chưa có trang chủ (gen_content chưa chạy)');
+  const warnings: string[] = [];
+  const copied = copyImagesToOutput(db, site.id, dirs.images, outDir);
+  if (copied < images.size) warnings.push(`Thiếu ${images.size - copied} ảnh trong cache, trang sẽ bỏ trống vị trí đó`);
 
   fs.writeFileSync(path.join(outDir, 'assets', 'css', 'style.css'), siteCss(site.theme));
   fs.writeFileSync(path.join(outDir, 'assets', 'js', 'site.js'), SITE_JS);
@@ -79,30 +90,7 @@ export async function buildSite(input: { db: Db; site: Site; sitesDir: string; u
   };
 
   for (const page of pages) {
-    let html: string;
-    switch (page.kind) {
-      case 'home':
-        html = renderHome(ctx, page);
-        break;
-      case 'about':
-        html = renderAbout(ctx, page);
-        break;
-      case 'services':
-        html = renderServices(ctx, page);
-        break;
-      case 'blog':
-        html = renderBlogIndex(ctx, page);
-        break;
-      case 'post':
-        html = renderPost(ctx, page);
-        break;
-      case 'contact':
-        html = renderContact(ctx, page);
-        break;
-      default:
-        html = renderSimple(ctx, page);
-    }
-    writePage(page.slug, html);
+    writePage(page.slug, renderPage(ctx, page));
     const url = page.slug ? `${siteUrl}/${page.slug}/` : `${siteUrl}/`;
     urls.push(url);
     lastmod.set(url, page.updated_at);

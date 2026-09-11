@@ -5,7 +5,7 @@ import type { PageContent, Section } from '../core/types.js';
 import { mdToHtml, mdToText, readingMinutes, wordCount } from './markdown.js';
 import { googleFontsUrl } from './themes.js';
 import { articleSchema, breadcrumbSchema, buildGraph, faqSchema, organizationSchema, personSchema, servicesSchema, sameAsList, webPageSchema, websiteSchema, type SchemaContext } from './schema.js';
-import { findImage, pageHref, pageUrl, type RenderContext } from './render-context.js';
+import { ed, edMd, findImage, pageHref, pageUrl, type RenderContext } from './render-context.js';
 import { slugify } from '../core/util.js';
 
 /* ------------------------------------------------------------------ */
@@ -33,7 +33,10 @@ function schemaCtx(ctx: RenderContext): SchemaContext {
 
 function Img(props: { ctx: RenderContext; imageKey: string; class?: string; eager?: boolean; altOverride?: string }) {
   const img = findImage(props.ctx, props.imageKey);
-  if (!img) return null;
+  if (!img) {
+    if (props.ctx.edit) return <div class="edit-img-placeholder" data-edit-img={props.imageKey}>Nhấp để chọn ảnh</div>;
+    return null;
+  }
   return (
     <img
       src={`/${img.file}`}
@@ -44,6 +47,7 @@ function Img(props: { ctx: RenderContext; imageKey: string; class?: string; eage
       loading={props.eager ? undefined : 'lazy'}
       decoding="async"
       fetchpriority={props.eager ? 'high' : undefined}
+      data-edit-img={props.ctx.edit ? props.imageKey : undefined}
     />
   );
 }
@@ -52,18 +56,19 @@ function Prose(props: { md: string }) {
   return <div class="prose">{raw(mdToHtml(props.md))}</div>;
 }
 
-function Faq(props: { ctx: RenderContext; items: { question: string; answer: string }[]; heading?: string }) {
+function Faq(props: { ctx: RenderContext; items: { question: string; answer: string }[]; heading?: string; basePath?: string }) {
   if (!props.items.length) return null;
+  const base = props.basePath ?? 'faq';
   return (
     <section class="section faq" id="faq">
       <div class="container">
         <div class="section-head">
           <h2>{props.heading ?? props.ctx.t.faq}</h2>
         </div>
-        {props.items.map((f) => (
-          <details>
-            <summary>{f.question}</summary>
-            <div class="prose">{raw(mdToHtml(f.answer))}</div>
+        {props.items.map((f, i) => (
+          <details open={props.ctx.edit ? true : undefined}>
+            <summary {...ed(props.ctx, `${base}.${i}.question`)}>{f.question}</summary>
+            <div class="prose" {...edMd(props.ctx, `${base}.${i}.answer`)}>{raw(mdToHtml(f.answer))}</div>
           </details>
         ))}
       </div>
@@ -77,8 +82,8 @@ function CtaBand(props: { ctx: RenderContext; heading?: string; text?: string })
   return (
     <section class="cta-band">
       <div class="container">
-        <h2>{props.heading ?? ctx.plan.ctaPrimary}</h2>
-        <p>{props.text ?? ctx.plan.tagline}</p>
+        <h2 {...ed(ctx, 'plan.ctaPrimary')}>{props.heading ?? ctx.plan.ctaPrimary}</h2>
+        <p {...ed(ctx, 'plan.tagline')}>{props.text ?? ctx.plan.tagline}</p>
         <a class="btn" href={ctx.entity.telephone ? `tel:${ctx.entity.telephone.replace(/\s+/g, '')}` : contactHref}>
           {ctx.entity.telephone ? `${ctx.t.contactUs}: ${ctx.entity.telephone}` : ctx.t.contactUs}
         </a>
@@ -121,15 +126,15 @@ function ServiceCards(props: { ctx: RenderContext; heading: string; linkBase: st
           <h2>{props.heading}</h2>
         </div>
         <div class="grid">
-          {ctx.plan.services.map((s) => {
+          {ctx.plan.services.map((s, i) => {
             const slug = s.slug ?? slugify(s.name);
             const href = props.linkBase ? `${props.linkBase}#${slug}` : `#${slug}`;
             return (
               <article class="card" id={props.linkBase ? undefined : slug}>
                 <Img ctx={ctx} imageKey={`service.${slug}`} altOverride={s.name} />
                 <div class="body">
-                  <h3>{props.linkBase ? <a href={href}>{s.name}</a> : s.name}</h3>
-                  <p>{s.summary}</p>
+                  <h3 {...ed(ctx, `plan.services.${i}.name`)}>{props.linkBase && !ctx.edit ? <a href={href}>{s.name}</a> : s.name}</h3>
+                  <p {...ed(ctx, `plan.services.${i}.summary`)}>{s.summary}</p>
                   {props.linkBase ? (
                     <a class="more" href={href}>
                       {ctx.t.learnMore} →
@@ -414,13 +419,13 @@ export function renderHome(ctx: RenderContext, page: Page): string {
           <section class="section" id="why">
             <div class="container">
               <div class="section-head">
-                <h2>{s?.heading || ctx.t.whyUs}</h2>
-                {s ? <div class="prose">{raw(mdToHtml(s.body))}</div> : null}
+                <h2 {...(s ? ed(ctx, `sections.${c.sections.indexOf(s)}.heading`) : {})}>{s?.heading || ctx.t.whyUs}</h2>
+                {s ? <div class="prose" {...edMd(ctx, `sections.${c.sections.indexOf(s)}.body`)}>{raw(mdToHtml(s.body))}</div> : null}
               </div>
               {ctx.plan.differentiators.length ? (
                 <ul class="why-list">
-                  {ctx.plan.differentiators.map((d) => (
-                    <li>{d}</li>
+                  {ctx.plan.differentiators.map((d, i) => (
+                    <li {...ed(ctx, `plan.differentiators.${i}`)}>{d}</li>
                   ))}
                 </ul>
               ) : null}
@@ -438,16 +443,16 @@ export function renderHome(ctx: RenderContext, page: Page): string {
           <section class="section alt" id="process">
             <div class="container">
               <div class="section-head">
-                <h2>{s.heading || ctx.t.process}</h2>
+                <h2 {...ed(ctx, `sections.${c.sections.indexOf(s)}.heading`)}>{s.heading || ctx.t.process}</h2>
               </div>
-              {steps ? (
+              {steps && !ctx.edit ? (
                 <div class="steps">
                   {steps.map((st) => (
                     <div class="step">{raw(mdToHtml(st))}</div>
                   ))}
                 </div>
               ) : (
-                <div class="prose">{raw(mdToHtml(s.body))}</div>
+                <div class="prose" {...edMd(ctx, `sections.${c.sections.indexOf(s)}.body`)}>{raw(mdToHtml(s.body))}</div>
               )}
             </div>
           </section>,
@@ -482,7 +487,7 @@ export function renderHome(ctx: RenderContext, page: Page): string {
           const s = queue.shift();
           if (s) blocks.push(proseSection(ctx, s, 'home', c.sections.indexOf(s), true));
         }
-        blocks.push(<Faq ctx={ctx} items={c.faq.length ? c.faq : ctx.plan.faq} />);
+        blocks.push(<Faq ctx={ctx} items={c.faq.length ? c.faq : ctx.plan.faq} basePath={c.faq.length ? 'faq' : 'plan.faq'} />);
         break;
       case 'cta':
         blocks.push(<CtaBand ctx={ctx} />);
@@ -496,15 +501,15 @@ export function renderHome(ctx: RenderContext, page: Page): string {
   const hero =
     heroStyle === 'image-bg' && heroImg ? (
       <section class="hero image-bg">
-        <img class="bg" src={`/${heroImg.file}`} alt="" width={heroImg.width ?? undefined} height={heroImg.height ?? undefined} fetchpriority="high" />
+        <img class="bg" src={`/${heroImg.file}`} alt="" width={heroImg.width ?? undefined} height={heroImg.height ?? undefined} fetchpriority="high" data-edit-img={ctx.edit ? 'home.hero' : undefined} />
         <div class="container">
-          <h1>{c.h1}</h1>
-          <p class="lead">{mdToText(c.intro)}</p>
+          <h1 {...ed(ctx, 'h1')}>{c.h1}</h1>
+          <p class="lead" {...edMd(ctx, 'intro')}>{mdToText(c.intro)}</p>
           <div class="actions">
-            <a class="btn accent" href={pageHref(ctx.routes.contact)}>
+            <a class="btn accent" href={pageHref(ctx.routes.contact)} {...ed(ctx, 'plan.ctaPrimary')}>
               {ctx.plan.ctaPrimary}
             </a>
-            <a class="btn secondary" href={isBlog ? pageHref(ctx.routes.blog) : pageHref(ctx.routes.services)}>
+            <a class="btn secondary" href={isBlog ? pageHref(ctx.routes.blog) : pageHref(ctx.routes.services)} {...ed(ctx, 'plan.ctaSecondary')}>
               {ctx.plan.ctaSecondary}
             </a>
           </div>
@@ -514,13 +519,13 @@ export function renderHome(ctx: RenderContext, page: Page): string {
       <section class="hero split">
         <div class="container">
           <div>
-            <h1>{c.h1}</h1>
-            <p class="lead">{mdToText(c.intro)}</p>
+            <h1 {...ed(ctx, 'h1')}>{c.h1}</h1>
+            <p class="lead" {...edMd(ctx, 'intro')}>{mdToText(c.intro)}</p>
             <div class="actions">
-              <a class="btn" href={pageHref(ctx.routes.contact)}>
+              <a class="btn" href={pageHref(ctx.routes.contact)} {...ed(ctx, 'plan.ctaPrimary')}>
                 {ctx.plan.ctaPrimary}
               </a>
-              <a class="btn secondary" href={isBlog ? pageHref(ctx.routes.blog) : pageHref(ctx.routes.services)}>
+              <a class="btn secondary" href={isBlog ? pageHref(ctx.routes.blog) : pageHref(ctx.routes.services)} {...ed(ctx, 'plan.ctaSecondary')}>
                 {ctx.plan.ctaSecondary}
               </a>
             </div>
@@ -531,10 +536,11 @@ export function renderHome(ctx: RenderContext, page: Page): string {
     ) : (
       <section class="hero minimal">
         <div class="container">
-          <h1>{c.h1}</h1>
-          <p class="lead">{mdToText(c.intro)}</p>
+          <h1 {...ed(ctx, 'h1')}>{c.h1}</h1>
+          <p class="lead" {...edMd(ctx, 'intro')}>{mdToText(c.intro)}</p>
+          {ctx.edit && !heroImg ? <Img ctx={ctx} imageKey="home.hero" eager /> : null}
           <div class="actions">
-            <a class="btn" href={pageHref(ctx.routes.contact)}>
+            <a class="btn" href={pageHref(ctx.routes.contact)} {...ed(ctx, 'plan.ctaPrimary')}>
               {ctx.plan.ctaPrimary}
             </a>
           </div>
@@ -556,18 +562,18 @@ function proseSection(ctx: RenderContext, s: Section, pageSlug: string, index: n
   return (
     <section class={`section${alt ? ' alt' : ''}`}>
       <div class="container">
-        {img ? (
+        {img || (ctx.edit && s.imageQuery) ? (
           <div class="two-col">
             <div>
-              <h2>{s.heading}</h2>
-              <div class="prose">{raw(mdToHtml(s.body))}</div>
+              <h2 {...ed(ctx, `sections.${index}.heading`)}>{s.heading}</h2>
+              <div class="prose" {...edMd(ctx, `sections.${index}.body`)}>{raw(mdToHtml(s.body))}</div>
             </div>
             <Img ctx={ctx} imageKey={imgKey} />
           </div>
         ) : (
           <div class="prose">
-            <h2>{s.heading}</h2>
-            {raw(mdToHtml(s.body))}
+            <h2 {...ed(ctx, `sections.${index}.heading`)}>{s.heading}</h2>
+            <div {...edMd(ctx, `sections.${index}.body`)}>{raw(mdToHtml(s.body))}</div>
           </div>
         )}
       </div>
@@ -620,15 +626,22 @@ export function renderAbout(ctx: RenderContext, page: Page): string {
               { name: ctx.t.about, href: pageHref(page.slug) },
             ]}
           />
-          <h1>{c.h1}</h1>
-          <p class="lead">{mdToText(c.intro)}</p>
+          <h1 {...ed(ctx, 'h1')}>{c.h1}</h1>
+          <p class="lead" {...edMd(ctx, 'intro')}>{mdToText(c.intro)}</p>
         </div>
       </section>
       <section class="section">
         <div class="container">
           <div class="two-col">
             <Img ctx={ctx} imageKey="about.hero" eager altOverride={c.heroImageAlt || `${ctx.site.brief.brandName}`} />
-            <div>{c.sections[0] ? <Prose md={`## ${c.sections[0].heading}\n\n${c.sections[0].body}`} /> : null}</div>
+            <div>
+              {c.sections[0] ? (
+                <div class="prose">
+                  <h2 {...ed(ctx, 'sections.0.heading')}>{c.sections[0].heading}</h2>
+                  <div {...edMd(ctx, 'sections.0.body')}>{raw(mdToHtml(c.sections[0].body))}</div>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </section>
@@ -648,6 +661,7 @@ export function renderServices(ctx: RenderContext, page: Page): string {
   const sc = schemaCtx(ctx);
   const url = pageUrl(ctx, page.slug);
   const services = c.services?.length ? c.services : ctx.plan.services.map((s) => ({ name: s.name, slug: s.slug ?? slugify(s.name), summary: s.summary, body: s.summary, imageQuery: s.imageQuery }));
+  const svcBase = c.services?.length ? 'services' : 'plan.services';
   const jsonLd = buildGraph([
     organizationSchema(sc),
     websiteSchema(sc),
@@ -670,8 +684,8 @@ export function renderServices(ctx: RenderContext, page: Page): string {
               { name: ctx.t.services, href: pageHref(page.slug) },
             ]}
           />
-          <h1>{c.h1}</h1>
-          <p class="lead">{mdToText(c.intro)}</p>
+          <h1 {...ed(ctx, 'h1')}>{c.h1}</h1>
+          <p class="lead" {...edMd(ctx, 'intro')}>{mdToText(c.intro)}</p>
           <p class="credit">
             {ctx.t.inThisPage}:{' '}
             {services.map((s, i) => (
@@ -689,11 +703,11 @@ export function renderServices(ctx: RenderContext, page: Page): string {
             <div class="two-col">
               {i % 2 === 0 ? <Img ctx={ctx} imageKey={`service.${s.slug}`} altOverride={s.name} /> : null}
               <div>
-                <h2>{s.name}</h2>
+                <h2 {...ed(ctx, `${svcBase}.${i}.name`)}>{s.name}</h2>
                 <p>
-                  <strong>{s.summary}</strong>
+                  <strong {...ed(ctx, `${svcBase}.${i}.summary`)}>{s.summary}</strong>
                 </p>
-                <div class="prose">{raw(mdToHtml(s.body))}</div>
+                <div class="prose" {...(svcBase === 'services' ? edMd(ctx, `services.${i}.body`) : {})}>{raw(mdToHtml(s.body))}</div>
                 <a class="btn" href={pageHref(ctx.routes.contact)}>
                   {ctx.plan.ctaPrimary}
                 </a>
@@ -735,8 +749,8 @@ export function renderBlogIndex(ctx: RenderContext, page: Page): string {
               { name: ctx.t.blog, href: pageHref(page.slug) },
             ]}
           />
-          <h1>{c.h1}</h1>
-          <p class="lead">{mdToText(c.intro)}</p>
+          <h1 {...ed(ctx, 'h1')}>{c.h1}</h1>
+          <p class="lead" {...edMd(ctx, 'intro')}>{mdToText(c.intro)}</p>
         </div>
       </section>
       <section class="section posts">
@@ -790,7 +804,7 @@ export function renderPost(ctx: RenderContext, page: Page): string {
                 { name: c.h1, href: pageHref(page.slug) },
               ]}
             />
-            <h1>{c.h1}</h1>
+            <h1 {...ed(ctx, 'h1')}>{c.h1}</h1>
             <div class="post-meta">
               <span>
                 {ctx.t.writtenBy} {ctx.entity.author.name || ctx.plan.authorName}
@@ -807,13 +821,13 @@ export function renderPost(ctx: RenderContext, page: Page): string {
         <div class="container">
           <div class="prose">
             <Img ctx={ctx} imageKey={heroKey} eager altOverride={c.heroImageAlt} />
-            {raw(mdToHtml(c.intro))}
+            <div {...edMd(ctx, 'intro')}>{raw(mdToHtml(c.intro))}</div>
             {c.keyTakeaways?.length ? (
               <aside class="takeaways">
                 <h2>{ctx.t.keyTakeaways}</h2>
                 <ul>
-                  {c.keyTakeaways.map((k) => (
-                    <li>{k}</li>
+                  {c.keyTakeaways.map((k, i) => (
+                    <li {...ed(ctx, `keyTakeaways.${i}`)}>{k}</li>
                   ))}
                 </ul>
               </aside>
@@ -835,13 +849,13 @@ export function renderPost(ctx: RenderContext, page: Page): string {
               const img = s.imageQuery ? findImage(ctx, imgKey) : undefined;
               return (
                 <>
-                  <h2 id={slugify(s.heading)}>{s.heading}</h2>
-                  {img ? (
+                  <h2 id={slugify(s.heading)} {...ed(ctx, `sections.${i}.heading`)}>{s.heading}</h2>
+                  {img || (ctx.edit && s.imageQuery) ? (
                     <figure>
                       <Img ctx={ctx} imageKey={imgKey} altOverride={s.heading} />
                     </figure>
                   ) : null}
-                  {raw(mdToHtml(s.body))}
+                  <div {...edMd(ctx, `sections.${i}.body`)}>{raw(mdToHtml(s.body))}</div>
                 </>
               );
             })}
@@ -849,10 +863,10 @@ export function renderPost(ctx: RenderContext, page: Page): string {
           {c.faq.length ? (
             <div class="faq" style="max-width:760px;margin-top:32px">
               <h2>{ctx.t.faq}</h2>
-              {c.faq.map((f) => (
-                <details>
-                  <summary>{f.question}</summary>
-                  <div class="prose">{raw(mdToHtml(f.answer))}</div>
+              {c.faq.map((f, i) => (
+                <details open={ctx.edit ? true : undefined}>
+                  <summary {...ed(ctx, `faq.${i}.question`)}>{f.question}</summary>
+                  <div class="prose" {...edMd(ctx, `faq.${i}.answer`)}>{raw(mdToHtml(f.answer))}</div>
                 </details>
               ))}
             </div>
@@ -904,8 +918,8 @@ export function renderContact(ctx: RenderContext, page: Page): string {
               { name: ctx.t.contact, href: pageHref(page.slug) },
             ]}
           />
-          <h1>{c.h1}</h1>
-          <p class="lead">{mdToText(c.intro)}</p>
+          <h1 {...ed(ctx, 'h1')}>{c.h1}</h1>
+          <p class="lead" {...edMd(ctx, 'intro')}>{mdToText(c.intro)}</p>
         </div>
       </section>
       <section class="section">
@@ -991,17 +1005,17 @@ export function renderSimple(ctx: RenderContext, page: Page, activeKey?: string)
     <Layout ctx={ctx} page={c} slug={page.slug} jsonLd={jsonLd} activeKey={activeKey}>
       <section class="hero minimal">
         <div class="container">
-          <h1>{c.h1}</h1>
-          <p class="lead">{mdToText(c.intro)}</p>
+          <h1 {...ed(ctx, 'h1')}>{c.h1}</h1>
+          <p class="lead" {...edMd(ctx, 'intro')}>{mdToText(c.intro)}</p>
         </div>
       </section>
       <section class="section">
         <div class="container">
           <div class="prose">
-            {c.sections.map((s) => (
+            {c.sections.map((s, i) => (
               <>
-                <h2>{s.heading}</h2>
-                {raw(mdToHtml(s.body))}
+                <h2 {...ed(ctx, `sections.${i}.heading`)}>{s.heading}</h2>
+                <div {...edMd(ctx, `sections.${i}.body`)}>{raw(mdToHtml(s.body))}</div>
               </>
             ))}
             <p class="credit">
@@ -1034,4 +1048,24 @@ export function renderNotFound(ctx: RenderContext): string {
 
 function doc(node: unknown): string {
   return '<!DOCTYPE html>\n' + String(node);
+}
+
+/** Dựng HTML một trang theo loại, dùng cho builder và chỉnh sửa trực quan. */
+export function renderPage(ctx: RenderContext, page: Page): string {
+  switch (page.kind) {
+    case 'home':
+      return renderHome(ctx, page);
+    case 'about':
+      return renderAbout(ctx, page);
+    case 'services':
+      return renderServices(ctx, page);
+    case 'blog':
+      return renderBlogIndex(ctx, page);
+    case 'post':
+      return renderPost(ctx, page);
+    case 'contact':
+      return renderContact(ctx, page);
+    default:
+      return renderSimple(ctx, page);
+  }
 }
