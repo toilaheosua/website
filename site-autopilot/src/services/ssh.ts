@@ -3,6 +3,7 @@ import path from 'node:path';
 import { Client, type ConnectConfig, type SFTPWrapper } from 'ssh2';
 import type { ServerConn, SshClient } from './types.js';
 import { AppError, TransientError } from '../core/errors.js';
+import { listLocalFiles, parseMd5sum, planUpload } from './deploy-diff.js';
 
 /** Quote chuỗi an toàn cho shell POSIX. */
 export function shq(s: string): string {
@@ -65,30 +66,42 @@ export async function connectSsh(server: ServerConn): Promise<SshClient> {
       conn.sftp((err, s) => (err ? reject(new TransientError(`SFTP lỗi: ${err.message}`, { cause: err })) : resolve(s)));
     });
 
+  /**
+   * Đưa bản dựng lên host theo kiểu tăng dần và nguyên tử:
+   * 1. Lấy md5 các tệp đang có trên host, so với bản cục bộ → chỉ tải tệp mới hoặc đổi, xóa tệp thừa.
+   * 2. Sao chép thư mục hiện tại sang thư mục tạm, áp thay đổi vào đó (site đang chạy không bị đụng).
+   * 3. Hoán đổi thư mục tạm vào vị trí chính.
+   * Không có gì thay đổi thì không hoán đổi.
+   */
   const uploadDirectory = async (localDir: string, remoteDir: string, opts: { owner?: string } = {}) => {
-    const files: { rel: string; abs: string; size: number }[] = [];
-    const walk = (dir: string) => {
-      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
-        const abs = path.join(dir, ent.name);
-        if (ent.isDirectory()) walk(abs);
-        else if (ent.isFile()) files.push({ rel: path.relative(localDir, abs).split(path.sep).join('/'), abs, size: fs.statSync(abs).size });
-      }
-    };
-    walk(localDir);
-
+    const files = listLocalFiles(localDir);
     const staging = `${remoteDir}.uploading`;
-    const dirs = new Set<string>(['']);
-    for (const f of files) {
+    const owner = opts.owner ?? 'www:www';
+
+    // Băm tệp trên host (thư mục chưa có thì coi như rỗng)
+    const hashed = await exec(`if [ -d ${shq(remoteDir)} ]; then cd ${shq(remoteDir)} && find . -type f -exec md5sum {} +; else echo __NO_DIR__; fi`, { timeoutMs: 180_000 });
+    const remoteExists = !hashed.stdout.includes('__NO_DIR__');
+    const remote = remoteExists ? parseMd5sum(hashed.stdout) : new Map<string, string>();
+    const plan = planUpload(files, remote);
+    if (remoteExists && plan.upload.length === 0 && plan.remove.length === 0) {
+      return { files: 0, bytes: 0, unchanged: plan.unchanged, removed: 0 };
+    }
+
+    // Thư mục tạm = bản sao thư mục hiện tại (hoặc rỗng), rồi tạo các thư mục con cần cho tệp mới
+    const dirs = new Set<string>();
+    for (const f of plan.upload) {
       const parts = f.rel.split('/');
       for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join('/'));
     }
-    const mkdirs = [...dirs].map((d) => shq(d ? `${staging}/${d}` : staging)).join(' ');
-    const prep = await exec(`rm -rf ${shq(staging)} && mkdir -p ${mkdirs}`);
+    const mkdirs = [staging, ...[...dirs].map((d) => `${staging}/${d}`)].map(shq).join(' ');
+    const copy = remoteExists ? `cp -a ${shq(remoteDir)} ${shq(staging)} && ` : '';
+    const removes = plan.remove.map((rel) => `rm -f ${shq(`${staging}/${rel}`)}`).join(' && ');
+    const prep = await exec(`rm -rf ${shq(staging)} && ${copy}mkdir -p ${mkdirs}${removes ? ' && ' + removes : ''}`, { timeoutMs: 180_000 });
     if (prep.code !== 0) throw new AppError(`Không tạo được thư mục tạm trên server: ${prep.stderr || prep.stdout}`);
 
     const s = await sftp();
     let bytes = 0;
-    const queue = [...files];
+    const queue = [...plan.upload];
     const workers = Array.from({ length: 4 }, async () => {
       while (queue.length) {
         const f = queue.shift();
@@ -103,7 +116,6 @@ export async function connectSsh(server: ServerConn): Promise<SshClient> {
     s.end();
 
     // Hoán đổi thư mục: giữ site cũ ở .old cho đến khi bản mới vào đúng vị trí, rồi dọn.
-    const owner = opts.owner ?? 'www:www';
     const swap = [
       `rm -rf ${shq(remoteDir + '.old')}`,
       `if [ -d ${shq(remoteDir)} ]; then chattr -i ${shq(remoteDir + '/.user.ini')} 2>/dev/null; mv ${shq(remoteDir)} ${shq(remoteDir + '.old')}; fi`,
@@ -114,7 +126,7 @@ export async function connectSsh(server: ServerConn): Promise<SshClient> {
     ].join(' && ');
     const res = await exec(swap);
     if (res.code !== 0) throw new AppError(`Hoán đổi thư mục site thất bại: ${res.stderr || res.stdout}`);
-    return { files: files.length, bytes };
+    return { files: plan.upload.length, bytes, unchanged: plan.unchanged, removed: plan.remove.length };
   };
 
   return {

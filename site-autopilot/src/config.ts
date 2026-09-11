@@ -32,6 +32,8 @@ const EnvSchema = z.object({
 
   MOCK_MODE: boolish,
   WORKER_CONCURRENCY: intish(3),
+  /** Gộp các lần sửa liên tiếp: job dựng lại chờ bấy nhiêu giây trước khi chạy, sửa thêm trong lúc chờ không tạo job mới */
+  REBUILD_DEBOUNCE_SEC: intish(20),
   HEALTH_CHECK_INTERVAL_MIN: intish(15),
   NS_POLL_INTERVAL_MIN: intish(5),
 

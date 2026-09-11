@@ -33,7 +33,7 @@ async function runToEnd(worker: Worker, db: Db, id: number) {
 
 describe('cổng kiểm duyệt chất lượng (mock)', () => {
   it('bài không đạt bị giữ lại, site vẫn live không có bài đó; duyệt tay thì bài được dựng', async () => {
-    const config = loadConfig({ MOCK_MODE: '1', DATA_DIR: tmp, WORKER_CONCURRENCY: '6', ADMIN_PASSWORD: 'x', NS_POLL_INTERVAL_MIN: '0' });
+    const config = loadConfig({ MOCK_MODE: '1', DATA_DIR: tmp, WORKER_CONCURRENCY: '6', ADMIN_PASSWORD: 'x', NS_POLL_INTERVAL_MIN: '0', REBUILD_DEBOUNCE_SEC: '0' });
     const db = new Db(':memory:');
     const services = createServices(config, db);
     (services.cloudflare as MockCloudflare).activateAfterPolls = 1;
@@ -93,7 +93,7 @@ describe('cổng kiểm duyệt chất lượng (mock)', () => {
   }, 120000);
 
   it('trang chủ không đạt thì bước dựng báo lỗi rõ ràng', async () => {
-    const config = loadConfig({ MOCK_MODE: '1', DATA_DIR: tmp, WORKER_CONCURRENCY: '6', ADMIN_PASSWORD: 'x', NS_POLL_INTERVAL_MIN: '0' });
+    const config = loadConfig({ MOCK_MODE: '1', DATA_DIR: tmp, WORKER_CONCURRENCY: '6', ADMIN_PASSWORD: 'x', NS_POLL_INTERVAL_MIN: '0', REBUILD_DEBOUNCE_SEC: '0' });
     const db = new Db(':memory:');
     const services = createServices(config, db);
     (services.cloudflare as MockCloudflare).activateAfterPolls = 1;

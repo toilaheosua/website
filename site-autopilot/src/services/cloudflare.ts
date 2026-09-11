@@ -37,7 +37,7 @@ export class CloudflareApi implements CloudflareClient {
       if (opts.allowErrorCodes && errs.some((e) => opts.allowErrorCodes?.includes(e.code))) return data;
       const msg = errs.map((e) => `${e.code}: ${e.message}`).join('; ') || `HTTP ${status}`;
       if (status === 401 || status === 403 || errs.some((e) => e.code === 10000 || e.code === 9109 || e.code === 9106)) {
-        throw new AppError(`Cloudflare từ chối quyền (${msg}). Kiểm tra API Token và các quyền: Zone Edit, DNS Edit, Zone Settings Edit, Zone WAF Edit, Bot Management Edit.`);
+        throw new AppError(`Cloudflare từ chối quyền (${msg}). Kiểm tra API Token và các quyền: Zone Edit, DNS Edit, Zone Settings Edit, Zone WAF Edit, Bot Management Edit, Cache Purge.`);
       }
       throw new AppError(`Cloudflare API lỗi ở ${method} ${path}: ${msg}`, { details: errs });
     }

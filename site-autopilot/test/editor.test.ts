@@ -69,7 +69,7 @@ describe('applyEdits', () => {
 
 describe('trang chỉnh sửa trực quan (mock)', () => {
   it('render trang với data-edit và lưu thay đổi rồi xếp hàng dựng lại', async () => {
-    const config = loadConfig({ MOCK_MODE: '1', DATA_DIR: tmp, WORKER_CONCURRENCY: '6', ADMIN_PASSWORD: 'x', NS_POLL_INTERVAL_MIN: '0' });
+    const config = loadConfig({ MOCK_MODE: '1', DATA_DIR: tmp, WORKER_CONCURRENCY: '6', ADMIN_PASSWORD: 'x', NS_POLL_INTERVAL_MIN: '0', REBUILD_DEBOUNCE_SEC: '0' });
     const db = new Db(':memory:');
     const services = createServices(config, db);
     (services.cloudflare as MockCloudflare).activateAfterPolls = 1;
@@ -108,7 +108,7 @@ describe('trang chỉnh sửa trực quan (mock)', () => {
     const html = await page.text();
     expect(html).toContain('data-edit="h1"');
     expect(html).toContain('data-edit-md="intro"');
-    expect(html).toContain('data-edit-img="home.hero"');
+    expect(html).toMatch(/data-edit-img="[a-z0-9./_-]+"/); // theme minimal không dùng ảnh hero, nhưng ảnh trong mục vẫn sửa được
     expect(html).toContain('id="sa-edit-data"');
     expect(html).toContain(`/sites/${id}/editor/style.css`);
     expect(html).not.toMatch(/href="\/assets\//);

@@ -67,6 +67,7 @@ Bước nào lỗi sẽ hiện màu đỏ với nguyên nhân. Bấm "Chạy l�
 - **Văn phong mẫu**: trong brief, dán 2 đến 3 đoạn văn đúng giọng thương hiệu vào "Đoạn văn mẫu đã duyệt"; AI học cách xưng hô, mức chuyên môn từ đó cho bài mới và trang sinh lại.
 - **Đổi giao diện**: Sửa brief → chọn theme → "Đổi theme và dựng lại".
 - **WAF**: Cài đặt → bật tắt Skip Bot, đổi quốc gia được phép, từ cho phép trong query, đường dẫn chặn, ngưỡng rate limit → "Lưu và đồng bộ tất cả site". Ba rule mặc định: Skip Bot cho bot đã xác minh, chặn truy cập ngoài VN (miễn IP server), chặn URL có `/?` lạ cùng xmlrpc và wp-cron; rate limit 100 request mỗi 10 giây.
+- **Đưa lên host tăng dần**: mỗi lần deploy, hệ thống so md5 tệp trên host với bản dựng, chỉ tải tệp mới hoặc đổi, xóa tệp thừa, rồi hoán đổi thư mục như cũ (site đang chạy không bị đụng). Không có gì đổi thì không tải, không xóa cache. Các lần sửa liên tiếp trên dashboard được gộp: job dựng lại chờ REBUILD_DEBOUNCE_SEC giây (mặc định 20) rồi chạy một lần.
 - **Sức khỏe**: tự kiểm tra mỗi 15 phút (DNS qua Cloudflare, HTTPS 200, zone active, SSL Flexible, số rule WAF). Cảnh báo qua Telegram nếu cấu hình.
 - **Xóa site**: trong trang site, chọn có xóa zone Cloudflare và site aaPanel hay không.
 

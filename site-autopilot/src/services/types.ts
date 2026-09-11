@@ -74,7 +74,8 @@ export interface AapanelClient {
 export interface SshClient {
   exec(command: string, opts?: { timeoutMs?: number }): Promise<{ code: number; stdout: string; stderr: string }>;
   /** Tải một thư mục cục bộ lên thư mục từ xa (ghi đè). */
-  uploadDirectory(localDir: string, remoteDir: string, opts?: { owner?: string }): Promise<{ files: number; bytes: number }>;
+  /** Tải lên tăng dần: files = số tệp thật sự tải lên, unchanged = số tệp giữ nguyên, removed = số tệp thừa đã xóa. */
+  uploadDirectory(localDir: string, remoteDir: string, opts?: { owner?: string }): Promise<{ files: number; bytes: number; unchanged: number; removed: number }>;
   close(): Promise<void>;
 }
 

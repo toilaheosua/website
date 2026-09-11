@@ -44,8 +44,8 @@ const handlers: Record<string, Handler> = {
     if (!ctx.site.site_path) throw new AppError('Site chưa được thêm vào aaPanel, chưa thể deploy');
     const b = await runBuild(ctx);
     const d = await runDeploy(ctx);
-    ctx.log('info', `Dựng lại và đưa lên host: ${b.files} tệp dựng, ${d.files} tệp tải lên`);
-    return { built: b.files, uploaded: d.files };
+    ctx.log('info', `Dựng lại và đưa lên host: ${b.files} tệp dựng, ${d.files} tệp tải lên, ${d.unchanged} giữ nguyên${d.removed ? `, ${d.removed} xóa` : ''}`);
+    return { built: b.files, uploaded: d.files, unchanged: d.unchanged, removed: d.removed };
   },
 
   async health_check(env) {

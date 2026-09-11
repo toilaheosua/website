@@ -508,10 +508,14 @@ export class Db {
 
   /* ---------------- jobs ---------------- */
 
+  /**
+   * dedupe: đã có job cùng loại đang xếp hàng (chưa chạy) thì dùng lại job đó.
+   * Job đang chạy không tính, vì nó có thể đã đọc dữ liệu trước thay đổi mới.
+   */
   enqueueJob(type: string, siteId: number | null, payload: unknown = null, opts: { runAt?: string; maxAttempts?: number; dedupe?: boolean } = {}): number {
     if (opts.dedupe) {
       const existing = this.raw
-        .prepare(`SELECT id FROM jobs WHERE type = ? AND site_id IS ? AND status IN ('queued','running')`)
+        .prepare(`SELECT id FROM jobs WHERE type = ? AND site_id IS ? AND status = 'queued'`)
         .get(type, siteId) as { id: number } | undefined;
       if (existing) return existing.id;
     }
@@ -519,6 +523,12 @@ export class Db {
       .prepare(`INSERT INTO jobs (type, site_id, payload, run_at, max_attempts) VALUES (?,?,?,?,?)`)
       .run(type, siteId, payload === null ? null : JSON.stringify(payload), opts.runAt ?? nowIso(), opts.maxAttempts ?? 3);
     return Number(r.lastInsertRowid);
+  }
+
+  /** Xếp job dựng lại và đưa lên host, gộp các lần gọi liên tiếp trong khoảng chờ. */
+  scheduleRebuild(siteId: number, debounceSec: number): number {
+    const runAt = new Date(Date.now() + Math.max(0, debounceSec) * 1000).toISOString();
+    return this.enqueueJob('rebuild_deploy', siteId, null, { dedupe: true, runAt });
   }
 
   /** Lấy và khóa job kế tiếp (đánh dấu running trong cùng transaction). */

@@ -46,7 +46,7 @@ describe('DAG', () => {
 
 describe('pipeline end-to-end (mock)', () => {
   it('chạy toàn bộ từ tạo site đến live và dựng ra website hoàn chỉnh', async () => {
-    const config = loadConfig({ MOCK_MODE: '1', DATA_DIR: tmp, WORKER_CONCURRENCY: '6', ADMIN_PASSWORD: 'x', NS_POLL_INTERVAL_MIN: '0' });
+    const config = loadConfig({ MOCK_MODE: '1', DATA_DIR: tmp, WORKER_CONCURRENCY: '6', ADMIN_PASSWORD: 'x', NS_POLL_INTERVAL_MIN: '0', REBUILD_DEBOUNCE_SEC: '0' });
     const db = new Db(':memory:');
     const services = createServices(config, db);
     (services.cloudflare as MockCloudflare).activateAfterPolls = 2;

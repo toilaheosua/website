@@ -463,19 +463,23 @@ const build: StepDef = {
   },
 };
 
-export async function runDeploy(ctx: StepContext): Promise<{ files: number; bytes: number }> {
+export async function runDeploy(ctx: StepContext): Promise<{ files: number; bytes: number; unchanged: number; removed: number }> {
   const server = requireServer(ctx);
   const remoteDir = ctx.site.site_path;
   if (!remoteDir) throw new AppError('Chưa biết thư mục site trên host (host_site chưa chạy)');
   const dirs = siteDirs(ctx.config.sitesDir, ctx.site.domain);
   if (!fs.existsSync(path.join(dirs.out, 'index.html'))) throw new AppError('Chưa có bản dựng (build chưa chạy)');
   const ssh = await ctx.services.sshFor(server);
-  let res: { files: number; bytes: number };
+  let res: { files: number; bytes: number; unchanged: number; removed: number };
   try {
     res = await ssh.uploadDirectory(dirs.out, remoteDir, { owner: 'www:www' });
     ctx.updateSite({ last_deployed_at: nowIso() });
   } finally {
     await ssh.close();
+  }
+  if (res.files === 0 && res.removed === 0) {
+    ctx.log('info', `Host đã có đúng bản dựng này (${res.unchanged} tệp), không cần tải lên`);
+    return res;
   }
   // Xóa bộ đệm Cloudflare để logo, CSS, ảnh mới hiện ngay thay vì bản cũ
   if (ctx.site.cf_zone_id && ctx.site.cf_zone_status === 'active') {
@@ -492,7 +496,7 @@ export async function runDeploy(ctx: StepContext): Promise<{ files: number; byte
 const deploy: StepDef = {
   id: 'deploy',
   label: 'Đưa website lên host',
-  description: 'Tải toàn bộ bản dựng lên aaPanel qua SSH và hoán đổi thư mục',
+  description: 'Tải các tệp thay đổi lên aaPanel qua SSH rồi hoán đổi thư mục',
   branch: 'build',
   deps: ['build', 'host_site'],
   maxAttempts: 4,

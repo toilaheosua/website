@@ -319,11 +319,11 @@ export function createApp(deps: WebDeps): Hono {
     if (str(body, 'action') === 'retheme') {
       patch.theme = makeTheme(brief.themeId as 'auto', brief.siteType);
       db.updateSite(site.id, patch);
-      if (site.plan) db.enqueueJob('rebuild_deploy', site.id, null, { dedupe: true });
+      if (site.plan) db.scheduleRebuild(site.id, config.REBUILD_DEBOUNCE_SEC);
       flash(c, { type: 'ok', text: `Đã đổi theme sang ${patch.theme.name}, đang dựng lại.${renamed}` });
     } else {
       db.updateSite(site.id, patch);
-      if ((renamed || logoChanged) && site.plan && site.site_path) db.enqueueJob('rebuild_deploy', site.id, null, { dedupe: true });
+      if ((renamed || logoChanged) && site.plan && site.site_path) db.scheduleRebuild(site.id, config.REBUILD_DEBOUNCE_SEC);
       flash(c, { type: 'ok', text: `Đã lưu brief.${renamed}${logoChanged ? ' Logo đã đổi, đang dựng lại.' : ''}` });
     }
     return c.redirect(`/sites/${site.id}`);
@@ -366,7 +366,7 @@ export function createApp(deps: WebDeps): Hono {
     db.addLog({ site_id: site.id, step: 'entity', level: 'info', message: 'Cập nhật Entity SEO' });
     const warnings = validateEntity(entity, site.brief.brandName);
     if (db.getGeneralSettings().autoSyncEntity && site.plan && site.site_path) {
-      db.enqueueJob('rebuild_deploy', site.id, null, { dedupe: true });
+      db.scheduleRebuild(site.id, config.REBUILD_DEBOUNCE_SEC);
       flash(c, { type: 'ok', text: `Đã lưu Entity, đang dựng lại và đưa lên host.${renamed}${warnings.length ? ` Còn ${warnings.length} gợi ý bổ sung.` : ''}` });
     } else {
       flash(c, { type: 'ok', text: 'Đã lưu Entity. Site sẽ dùng dữ liệu này ở lần dựng tiếp theo.' });
@@ -394,7 +394,7 @@ export function createApp(deps: WebDeps): Hono {
     try {
       const content = PageContentSchema.parse(JSON.parse(str(body, 'content')));
       db.upsertPage({ site_id: site.id, kind: page.kind, slug: page.slug, title: content.title, content, sort_order: page.sort_order });
-      if (site.plan && site.site_path) db.enqueueJob('rebuild_deploy', site.id, null, { dedupe: true });
+      if (site.plan && site.site_path) db.scheduleRebuild(site.id, config.REBUILD_DEBOUNCE_SEC);
       flash(c, { type: 'ok', text: 'Đã lưu nội dung, đang dựng lại.' });
     } catch (err) {
       flash(c, { type: 'err', text: `JSON không hợp lệ: ${errorMessage(err)}` });
@@ -414,7 +414,7 @@ export function createApp(deps: WebDeps): Hono {
       db.updateSite(site.id, { status: 'building', error_summary: null });
       flash(c, { type: 'ok', text: `Đã duyệt "${page.title}", chạy lại từ bước dựng website.` });
     } else if (site.plan && site.site_path) {
-      db.enqueueJob('rebuild_deploy', site.id, null, { dedupe: true });
+      db.scheduleRebuild(site.id, config.REBUILD_DEBOUNCE_SEC);
       flash(c, { type: 'ok', text: `Đã duyệt "${page.title}", đang dựng lại và đưa lên host.` });
     } else {
       flash(c, { type: 'ok', text: `Đã duyệt "${page.title}".` });
@@ -510,7 +510,7 @@ export function createApp(deps: WebDeps): Hono {
     return c.body(fs.readFileSync(file), 200, { 'Content-Type': 'image/webp', 'Cache-Control': 'private, max-age=3600' });
   });
   /* ---------------- chỉnh sửa trực quan ---------------- */
-  mountEditor(app, { db, config, siteOr404, render: render as never, enqueueRebuild: (siteId) => db.enqueueJob('rebuild_deploy', siteId, null, { dedupe: true }) });
+  mountEditor(app, { db, config, siteOr404, render: render as never, enqueueRebuild: (siteId) => db.scheduleRebuild(siteId, config.REBUILD_DEBOUNCE_SEC) });
 
   /* ---------------- xem bản dựng cục bộ ---------------- */
   app.get('/sites/:id/preview/*', (c) => {

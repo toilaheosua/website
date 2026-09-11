@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
 import type { AapanelClient, CfDnsRecord, CfRule, CfZone, CloudflareClient, ContentGenerator, GoogleClient, ImageProvider, IndexNowClient, PanelSite, ServerConn, SshClient, StockPhoto } from './types.js';
+import { listLocalFiles, planUpload } from './deploy-diff.js';
 import type { EntityData, PageContent, SiteBrief, SitePlan } from '../core/types.js';
 import { randomHex, slugify } from '../core/util.js';
 
@@ -114,15 +115,16 @@ export function mockSshFactory(mockRoot: string) {
     },
     async uploadDirectory(localDir: string, remoteDir: string) {
       const dest = path.join(mockRoot, remoteDir.replace(/^\/+/, ''));
-      fs.rmSync(dest, { recursive: true, force: true });
-      fs.mkdirSync(dest, { recursive: true });
-      fs.cpSync(localDir, dest, { recursive: true });
-      let files = 0;
-      const walk = (d: string) => {
-        for (const e of fs.readdirSync(d, { withFileTypes: true })) e.isDirectory() ? walk(path.join(d, e.name)) : files++;
-      };
-      walk(dest);
-      return { files, bytes: 0 };
+      const remote = new Map(fs.existsSync(dest) ? listLocalFiles(dest).map((f) => [f.rel, f.md5]) : []);
+      const plan = planUpload(listLocalFiles(localDir), remote);
+      for (const rel of plan.remove) fs.rmSync(path.join(dest, rel), { force: true });
+      let bytes = 0;
+      for (const f of plan.upload) {
+        fs.mkdirSync(path.dirname(path.join(dest, f.rel)), { recursive: true });
+        fs.copyFileSync(f.abs, path.join(dest, f.rel));
+        bytes += f.size;
+      }
+      return { files: plan.upload.length, bytes, unchanged: plan.unchanged, removed: plan.remove.length };
     },
     async close() {},
   });
