@@ -280,6 +280,10 @@ export function NewSiteForm(props: { servers: ServerRow[]; general: GeneralSetti
           <textarea name="notes" placeholder="Ví dụ: không nhắc đến đối thủ, nhấn mạnh bảo hành 12 tháng, kể về bà chủ quán 30 năm nấu hủ tiếu...">
             {val('notes')}
           </textarea>
+          <label>Đoạn văn mẫu đã duyệt (tùy chọn)</label>
+          <textarea name="styleSamples" placeholder="Dán 2 đến 3 đoạn văn bạn thấy đúng giọng của thương hiệu (bài Facebook, đoạn giới thiệu cũ...). AI học cách xưng hô, mức chuyên môn và độ cụ thể từ đây, không sao chép nguyên văn.">
+            {val('styleSamples')}
+          </textarea>
         </fieldset>
 
         <fieldset>
@@ -388,6 +392,7 @@ export function SiteDetail(props: { site: Site; steps: StepRow[]; defs: StepDef[
   ];
   const cfDash = props.config.CLOUDFLARE_ACCOUNT_ID ? `https://dash.cloudflare.com/${props.config.CLOUDFLARE_ACCOUNT_ID}/${site.domain}` : 'https://dash.cloudflare.com/';
   const entityWarnings = validateEntity(site.entity, site.brief.brandName);
+  const heldPages = pages.filter((p) => p.status === 'needs_review');
   return (
     <>
       <div class="actions" style="justify-content:space-between;margin-bottom:14px">
@@ -624,6 +629,12 @@ export function SiteDetail(props: { site: Site; steps: StepRow[]; defs: StepDef[
             )}
           </div>
 
+          {heldPages.length ? (
+            <div class="alert warn">
+              <b>{heldPages.length} trang chưa đạt kiểm duyệt chất lượng</b>, đang giữ lại, chưa đưa lên website: {heldPages.map((p) => p.title).join(' · ')}.{' '}
+              <a href={`/sites/${site.id}/pages`}>Xem lỗi, duyệt hoặc sinh lại →</a>
+            </div>
+          ) : null}
           {entityWarnings.length ? (
             <div class="card" style="margin-bottom:16px">
               <h3>Entity SEO cần bổ sung</h3>
@@ -686,6 +697,26 @@ export function LogView(props: { logs: LogRow[] }) {
 /*  Trang nội dung                                                      */
 /* ------------------------------------------------------------------ */
 
+function ReviewBadge(props: { page: PageRow }) {
+  const r = props.page.review;
+  if (props.page.status === 'needs_review') {
+    const majors = r?.issues.filter((i) => i.severity === 'major').length ?? 0;
+    return (
+      <span class="badge waiting" title={r?.issues.map((i) => i.message).join('\n')}>
+        Chưa đạt ({majors} lỗi)
+      </span>
+    );
+  }
+  if (!r) return <span class="muted">Chưa kiểm</span>;
+  const minors = r.issues.filter((i) => i.severity === 'minor').length;
+  return (
+    <span class="badge done" title={r.summary ?? ''}>
+      {r.approvedBy === 'user' ? 'Người dùng duyệt' : 'Đạt'}
+      {minors ? ` · ${minors} góp ý` : ''}
+    </span>
+  );
+}
+
 export function PagesList(props: { site: Site; pages: PageRow[] }) {
   return (
     <div class="card">
@@ -695,6 +726,7 @@ export function PagesList(props: { site: Site; pages: PageRow[] }) {
       <p>
         <a href={`/sites/${props.site.id}`}>← Quay lại site</a>
       </p>
+      <div class="help" style="margin-bottom:12px">Mỗi trang đi qua cổng kiểm duyệt (kiểm tra tự động + AI duyệt) trước khi đăng. Trang "Chưa đạt" được giữ lại, không dựng và không vào sitemap; bạn xem lỗi trong chi tiết trang rồi sửa bằng Chỉnh sửa trực quan, bấm "Duyệt và đăng" hoặc "Sinh lại".</div>
       <form method="post" action={`/sites/${props.site.id}/replace-text`} class="card tight" style="margin-bottom:14px;background:var(--bg)">
         <strong>Thay chữ trong toàn bộ nội dung</strong>
         <div class="help">Dùng khi sửa tên thương hiệu, địa chỉ, số điện thoại viết sai ở mọi trang. Phân biệt hoa thường, thay đúng chuỗi đã nhập, xong tự dựng lại và đưa lên host.</div>
@@ -711,7 +743,7 @@ export function PagesList(props: { site: Site; pages: PageRow[] }) {
           <tr>
             <th>Trang</th>
             <th>Loại</th>
-            <th>Từ khóa</th>
+            <th>Kiểm duyệt</th>
             <th>Cập nhật</th>
             <th></th>
           </tr>
@@ -724,14 +756,28 @@ export function PagesList(props: { site: Site; pages: PageRow[] }) {
                 <div class="muted mono small">/{pg.slug}{pg.slug ? '/' : ''}</div>
               </td>
               <td>{pg.kind}</td>
-              <td class="small">{pg.content.targetKeyword ?? ''}</td>
+              <td class="small">
+                <ReviewBadge page={pg} />
+              </td>
               <td class="small muted">{formatDateVi(pg.updated_at)}</td>
               <td>
-                <form method="post" action={`/sites/${props.site.id}/pages/${pg.id}/regenerate`} class="inline">
-                  <button class="btn secondary sm" type="submit" onclick="return confirm('Sinh lại trang này bằng AI?')">
-                    Sinh lại
-                  </button>
-                </form>
+                <div class="actions">
+                  {pg.status === 'needs_review' ? (
+                    <form method="post" action={`/sites/${props.site.id}/pages/${pg.id}/approve`} class="inline">
+                      <button class="btn sm" type="submit" style="background:#16a34a;border-color:#16a34a" onclick="return confirm('Đăng trang này dù chưa đạt kiểm duyệt?')">
+                        Duyệt và đăng
+                      </button>
+                    </form>
+                  ) : null}
+                  <a class="btn secondary sm" href={`/sites/${props.site.id}/editor?page=${pg.id}`}>
+                    Sửa
+                  </a>
+                  <form method="post" action={`/sites/${props.site.id}/pages/${pg.id}/regenerate`} class="inline">
+                    <button class="btn secondary sm" type="submit" onclick="return confirm('Sinh lại trang này bằng AI?')">
+                      Sinh lại
+                    </button>
+                  </form>
+                </div>
               </td>
             </tr>
           ))}
@@ -766,7 +812,41 @@ export function PageDetail(props: { site: Site; page: PageRow }) {
         </dd>
         <dt>Từ khóa</dt>
         <dd>{c.targetKeyword ?? ''}</dd>
+        <dt>Kiểm duyệt</dt>
+        <dd>
+          <ReviewBadge page={props.page} />
+          {props.page.review?.summary ? <span class="muted small"> {props.page.review.summary}</span> : null}
+        </dd>
       </div>
+      {props.page.review?.issues.length ? (
+        <div class={`alert ${props.page.status === 'needs_review' ? 'warn' : 'info'}`}>
+          <b>{props.page.status === 'needs_review' ? 'Lỗi cần sửa trước khi đăng' : 'Góp ý của cổng kiểm duyệt'}</b>
+          <ul class="small" style="margin:6px 0 0;padding-left:18px">
+            {props.page.review.issues.map((i) => (
+              <li>
+                <b>{i.severity === 'major' ? 'Bắt buộc' : 'Nên'}</b> · <span class="mono">{i.where}</span>: {i.message}
+              </li>
+            ))}
+          </ul>
+          <div class="actions" style="margin-top:10px">
+            <a class="btn sm" href={`/sites/${props.site.id}/editor?page=${props.page.id}`}>
+              Sửa trực quan
+            </a>
+            {props.page.status === 'needs_review' ? (
+              <form method="post" action={`/sites/${props.site.id}/pages/${props.page.id}/approve`} class="inline">
+                <button class="btn sm" type="submit" style="background:#16a34a;border-color:#16a34a" onclick="return confirm('Đăng trang này dù chưa đạt kiểm duyệt?')">
+                  Duyệt và đăng
+                </button>
+              </form>
+            ) : null}
+            <form method="post" action={`/sites/${props.site.id}/pages/${props.page.id}/regenerate`} class="inline">
+              <button class="btn secondary sm" type="submit" onclick="return confirm('Sinh lại trang này bằng AI?')">
+                Sinh lại
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : null}
       <form method="post" action={`/sites/${props.site.id}/pages/${props.page.id}`}>
         <label>Nội dung (JSON, sửa trực tiếp nếu cần)</label>
         <textarea name="content" style="min-height:360px;font-family:ui-monospace,Consolas,monospace;font-size:.82rem">
@@ -1158,6 +1238,11 @@ export function EditBriefForm(props: { site: Site; servers: ServerRow[] }) {
         </label>
         <label>Ghi chú cho AI</label>
         <textarea name="notes">{b.notes}</textarea>
+        <label>Đoạn văn mẫu đã duyệt (tùy chọn)</label>
+        <textarea name="styleSamples" placeholder="Dán 2 đến 3 đoạn văn đúng giọng thương hiệu. AI học cách xưng hô, mức chuyên môn và độ cụ thể từ đây.">
+          {b.styleSamples}
+        </textarea>
+        <div class="help">Áp dụng cho bài viết mới và trang sinh lại.</div>
         <div class="actions" style="margin-top:12px">
           <button class="btn" type="submit" name="action" value="save">
             Lưu

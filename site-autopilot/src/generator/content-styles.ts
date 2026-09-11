@@ -1,4 +1,6 @@
-import type { SiteBrief } from '../core/types.js';
+import type { PageContent, SiteBrief } from '../core/types.js';
+
+type PageKind = PageContent['kind'];
 
 /**
  * Ba kiểu viết nội dung. Người dùng chọn trong brief ("auto" = hệ thống chọn theo ngành).
@@ -27,10 +29,10 @@ export const CONTENT_STYLES: Record<ContentStyleId, ContentStyle> = {
     guide: `KIỂU VIẾT: KỂ CHUYỆN THƯƠNG HIỆU
 Persona: một cây viết ẩm thực và đời sống địa phương có 10 năm đi thực tế, viết bài giới thiệu quán, thương hiệu như kể cho bạn thân nghe. Giọng ấm, gần gũi, tự tin nhưng không khoa trương.
 Cấu trúc:
-- Mở bài bằng một khung cảnh hoặc cảm giác cụ thể (mùi nước lèo sôi lúc 5 giờ sáng, tiếng dao chạm thớt, ánh đèn góc quán), hai đến ba câu, rồi mới nói đây là ai, ở đâu.
+- Mở bài bằng một khung cảnh hoặc cảm giác cụ thể (mùi nước lèo sôi lúc 5 giờ sáng, tiếng dao chạm thớt, ánh đèn góc quán), hai đến ba câu, rồi mới nói đây là ai, ở đâu. Với kiểu này, cách mở bằng khung cảnh thay cho quy tắc "mở bằng tình huống của bạn".
 - Kể nguồn gốc và con người: ai làm, bắt đầu thế nào, giữ cái gì qua năm tháng. Chỉ dùng chi tiết có trong brief; nếu brief không có, kể về cách làm và tiêu chuẩn thay vì bịa nhân vật, năm tháng.
 - Cái riêng: nguyên liệu, công đoạn, bí quyết, cách phục vụ khác người ta ở chỗ nào. Mô tả bằng giác quan (mùi, vị, màu, độ giòn, âm thanh) ít nhất ba lần mỗi trang.
-- Trải nghiệm của khách: một khách quen đến vào lúc nào, gọi món gì, thói quen gì. Viết dạng "khách quen ở đây thường..." thay vì tên riêng.
+- Trải nghiệm của khách: chỉ kể khi brief hoặc ghi chú có mô tả khách thật; nếu không có, mô tả cách quán phục vụ (bưng ra thế nào, thêm gì miễn phí, gói mang đi ra sao) thay vì tạo ra thói quen khách hàng không có nguồn.
 - Thông tin thực dụng đặt gọn ở cuối: giờ mở cửa, giá tham khảo dạng khoảng, chỗ để xe, cách đi, gọi trước thế nào, đúng theo brief.
 - Kết bằng lời mời chân thành một đến hai câu, không hô khẩu hiệu.
 Cấm: liệt kê ưu điểm kiểu quảng cáo, "hàng đầu", "số 1", "tinh hoa ẩm thực", mở bài bằng định nghĩa món ăn.`,
@@ -74,11 +76,26 @@ export const CONTENT_STYLE_CHOICES: { id: ContentStyleChoice; name: string; desc
   ...Object.values(CONTENT_STYLES).map((s) => ({ id: s.id, name: s.name, description: s.description })),
 ];
 
-/** Ba kỹ thuật tối ưu áp dụng cho mọi kiểu viết: móc câu và kết luận trước, nội dung có thịt, nhịp đọc. */
-export const ENGAGEMENT_RULES = `BA KỸ THUẬT GIỮ CHÂN NGƯỜI ĐỌC (bắt buộc với mọi trang):
-1. Móc câu và kết luận trước: hai câu đầu của trang phải nói đúng tình huống hoặc lợi ích cụ thể của người đọc, xưng "bạn", không mở bằng định nghĩa, không "trong thời đại", không "như chúng ta đã biết". Câu thứ ba nói rõ trang này giúp gì. Bài blog có keyTakeaways: ba đến năm gạch đầu dòng "Tóm tắt nhanh", mỗi ý là một kết luận dùng được ngay.
-2. Nội dung có thịt: ưu tiên dữ liệu thật trong brief (địa chỉ, khu vực, giờ, dịch vụ, điểm khác biệt); khi có từ hai phương án trở lên thì dùng bảng markdown để so sánh; khi có từ ba việc trở lên thì dùng checklist; mỗi trang có một đến hai callout dạng "> **Mẹo:** ..." hoặc "> **Lưu ý:** ..." đặt đúng chỗ người đọc dễ mắc lỗi; chèn hai đến ba liên kết nội bộ theo ngữ cảnh bằng markdown [chữ](đường dẫn), chỉ dùng đường dẫn trong danh sách được cấp, đặt giữa bài thay vì dồn cuối.
-3. Nhịp đọc: đoạn hai đến bốn câu; cứ vài đoạn lại có một câu ngắn năm đến tám từ; in đậm một cụm quan trọng mỗi hai đến ba đoạn; heading phải chứa thông tin hoặc kết quả cụ thể (số, lợi ích, điều kiện), không heading chung chung như "Tổng quan", "Giới thiệu"; đoạn cuối là "Bước tiếp theo" nói rõ người đọc nên làm gì ngay và liên hệ bằng cách nào, khớp với nhu cầu của trang.`;
+/** Ba kỹ thuật giữ chân người đọc, áp dụng cho mọi kiểu viết. Cấu trúc từng loại trang nằm ở PAGE_STRUCTURES. */
+export const ENGAGEMENT_RULES = `BA KỸ THUẬT GIỮ CHÂN NGƯỜI ĐỌC:
+1. Móc câu và kết luận trước: hai câu đầu của trang phải nói đúng tình huống hoặc lợi ích cụ thể của người đọc (kiểu Kể chuyện thì mở bằng khung cảnh cụ thể), không mở bằng định nghĩa, không "trong thời đại", không "như chúng ta đã biết". Câu thứ ba nói rõ trang này giúp gì. Bài blog có keyTakeaways: ba đến năm gạch đầu dòng "Tóm tắt nhanh", mỗi ý là một kết luận dùng được ngay.
+2. Nội dung có thịt: mỗi đoạn phải có thông tin dùng được, lấy từ dữ liệu thật trong brief (địa chỉ, khu vực, giờ, dịch vụ, điểm khác biệt). Chỉ dùng bảng markdown khi thật sự có từ hai phương án cần so sánh, checklist khi có từ ba việc cần làm, callout "> **Mẹo:** ..." hoặc "> **Lưu ý:** ..." khi có chỗ người đọc dễ mắc lỗi; không thêm các khối này chỉ để cho có. Liên kết nội bộ: hai đến ba liên kết theo ngữ cảnh bằng markdown [chữ](đường dẫn), chỉ dùng đường dẫn trong danh sách được cấp, đặt giữa bài.
+3. Nhịp đọc: đoạn hai đến bốn câu; xen câu ngắn; in đậm một cụm quan trọng mỗi hai đến ba đoạn; heading phải chứa thông tin hoặc kết quả cụ thể, không heading chung chung như "Tổng quan", "Giới thiệu"; độ dài vừa đủ để giải quyết nhu cầu tìm kiếm, không kéo dài cho đủ chỉ tiêu.`;
+
+/** Cấu trúc theo mục đích của từng loại trang. Trang nào không có yêu cầu thì không bắt thêm khối. */
+export const PAGE_STRUCTURES: Record<PageKind, string> = {
+  home: `CẤU TRÚC TRANG CHỦ: trong 5 giây người đọc hiểu làm gì, cho ai, ở đâu → dịch vụ chính (tóm tắt, chi tiết để trang dịch vụ) → bằng chứng và điểm khác biệt chỉ lấy từ brief → quy trình làm việc hoặc trải nghiệm khách → khu vực phục vụ → cách liên hệ. Section cuối "Bước tiếp theo" nói rõ nên làm gì ngay.`,
+  about: `CẤU TRÚC TRANG GIỚI THIỆU: con người và cách làm việc có thật: xuất phát điểm, ai làm, giữ tiêu chuẩn gì, cách làm việc với khách, cam kết. Chỉ nêu người, năm tháng, thành tích có trong brief; không có thì kể về cách làm và tiêu chuẩn. Không checklist, không bảng, không "Bước tiếp theo", không móc câu kiểu quảng cáo; kết bằng một đến hai câu mời chân thành.`,
+  services: `CẤU TRÚC TRANG DỊCH VỤ: mỗi dịch vụ đi theo thứ tự: vấn đề khách đang gặp → phạm vi công việc gồm gì, không gồm gì → bằng chứng hoặc cách làm khác biệt (chỉ từ brief) → quy trình từ lúc liên hệ đến bàn giao → điều kiện ảnh hưởng báo giá (không bịa giá, giải thích yếu tố làm giá thay đổi) → cách liên hệ. Section chung: cách báo giá, cam kết.`,
+  blog: `Trang danh sách bài viết: chỉ cần title, meta, h1 và intro nói blog viết về gì, cho ai.`,
+  post: `CẤU TRÚC BÀI VIẾT, chọn theo ý định tìm kiếm của từ khóa và góc nhìn được giao:
+- Bài giải đáp (từ khóa dạng câu hỏi, "là gì", "có nên", "tại sao"): trả lời trực tiếp ngay đầu bài → giải thích vì sao → trường hợp ngoại lệ → bước xử lý cụ thể.
+- Bài so sánh ("hay", "vs", "nên chọn", "loại nào"): tiêu chí lựa chọn → ưu và nhược từng phương án (bảng nếu từ hai phương án) → ai phù hợp với phương án nào → kết luận có điều kiện.
+- Bài hướng dẫn ("cách", "hướng dẫn", "làm sao"): tình huống người đọc → các bước đánh số, mỗi bước có cách kiểm tra đã đúng chưa → lỗi hay gặp → việc cần làm ngay.
+Section cuối là "Bước tiếp theo" ngắn gọn, nói việc nên làm và cách liên hệ. Độ dài đủ giải quyết trọn nhu cầu, thường 700 đến 1500 từ, không kéo dài.`,
+  contact: `CẤU TRÚC TRANG LIÊN HỆ: cách liên hệ nhanh nhất và thời gian phản hồi hợp lý (không cam kết số nếu brief không có) → thông tin liên hệ đúng brief → khu vực phục vụ → điều nên chuẩn bị trước khi liên hệ. Ngắn gọn, không kể chuyện dài.`,
+  privacy: `CẤU TRÚC CHÍNH SÁCH BẢO MẬT cho website tĩnh giới thiệu doanh nghiệp: chỉ mô tả đúng những gì website này làm. Website không có form gửi dữ liệu, không tài khoản, không thanh toán; chỉ có thể có mã phân tích Google Analytics nếu được cho biết. Không đoán thêm công cụ theo dõi hay cách thu thập nào khác. Giọng rõ ràng, không móc câu, không callout.`,
+};
 
 const STORY_HINTS = ['quán', 'nhà hàng', 'ẩm thực', 'món', 'phở', 'bún', 'hủ tiếu', 'cơm', 'bánh', 'cà phê', 'cafe', 'trà sữa', 'bar', 'bia', 'tiệc', 'spa', 'làm đẹp', 'nail', 'tóc', 'thẩm mỹ', 'thời trang', 'boutique', 'thủ công', 'handmade', 'homestay', 'khách sạn', 'du lịch', 'tour', 'hoa', 'bakery'];
 const PLAYBOOK_HINTS = ['thi công', 'xây dựng', 'lắp đặt', 'sửa chữa', 'điện lạnh', 'điện nước', 'nội thất', 'chuyển nhà', 'vận chuyển', 'logistics', 'bất động sản', 'phần mềm', 'thiết bị', 'máy móc', 'cơ khí', 'in ấn', 'quảng cáo', 'seo', 'marketing', 'kế toán', 'hướng dẫn'];

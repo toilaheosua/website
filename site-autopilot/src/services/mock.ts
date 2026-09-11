@@ -137,7 +137,8 @@ const LOREM_VI = [
 
 function fakeBody(seed: string, n = 3): string {
   const out: string[] = [];
-  for (let i = 0; i < n; i++) out.push(LOREM_VI[(seed.length + i) % LOREM_VI.length] as string);
+  const offset = [...seed].reduce((h, ch) => h + ch.charCodeAt(0), 0);
+  for (let i = 0; i < n; i++) out.push(`${LOREM_VI[(offset + i) % LOREM_VI.length]} (${seed}, đoạn ${i + 1})`);
   out.push(`- Điểm cần nhớ thứ nhất về ${seed}\n- Điểm cần nhớ thứ hai\n- Điểm cần nhớ thứ ba`);
   if (seed.endsWith('-1')) out.push('> **Mẹo:** Hỏi rõ thời gian bảo hành trước khi ký, xem thêm [dịch vụ của chúng tôi](/dich-vu/) hoặc [liên hệ](/lien-he/).');
   if (seed.endsWith('-2')) out.push('| Phương án | Phù hợp với | Chi phí tham khảo |\n|---|---|---|\n| Sửa tại chỗ | Lỗi nhỏ | Thấp |\n| Thay mới | Thiết bị cũ | Cao hơn |');
@@ -230,6 +231,14 @@ export class MockContentGenerator implements ContentGenerator {
   async editPage(input: { page: PageContent }): Promise<PageContent> {
     this.stats.calls++;
     return input.page;
+  }
+
+  async reviewPage(input: { brief: SiteBrief; entity: EntityData; plan: SitePlan; page: PageContent }): Promise<{ pass: boolean; summary: string; issues: { severity: 'major' | 'minor'; where: string; problem: string; fix: string }[] }> {
+    this.stats.calls++;
+    const bad = /MOCK_BAD/.test(input.page.intro);
+    return bad
+      ? { pass: false, summary: 'Bản mock bị đánh dấu không đạt để thử cổng kiểm duyệt.', issues: [{ severity: 'major', where: 'intro', problem: 'Có đánh dấu MOCK_BAD', fix: 'Bỏ đánh dấu' }] }
+      : { pass: true, summary: 'Nội dung rõ ràng, đúng nhu cầu, không có dữ kiện ngoài brief.', issues: [] };
   }
 
   async suggestPostTopics(input: { brief: SiteBrief; existingTitles: string[]; count: number }): Promise<SitePlan['posts']> {

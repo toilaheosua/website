@@ -401,6 +401,26 @@ export function createApp(deps: WebDeps): Hono {
     }
     return c.redirect(`/sites/${site.id}/pages/${page.id}`);
   });
+  app.post('/sites/:id/pages/:pageId/approve', (c) => {
+    const site = siteOr404(c);
+    const page = db.getPage(Number.parseInt(c.req.param('pageId'), 10));
+    if (!site || !page || page.site_id !== site.id) return c.notFound();
+    const review = page.review ? { ...page.review, pass: true, approvedBy: 'user' as const } : { pass: true, issues: [], approvedBy: 'user' as const, checkedAt: new Date().toISOString() };
+    db.setPageStatus(page.id, 'published', review);
+    db.addLog({ site_id: site.id, step: 'review', level: 'info', message: `Người dùng duyệt và đăng trang "${page.title}"` });
+    const buildStep = db.listSteps(site.id).find((s) => s.step === 'build');
+    if (buildStep && buildStep.status === 'failed') {
+      db.resetStepsFrom(site.id, dependentsOf(steps, 'build'));
+      db.updateSite(site.id, { status: 'building', error_summary: null });
+      flash(c, { type: 'ok', text: `Đã duyệt "${page.title}", chạy lại từ bước dựng website.` });
+    } else if (site.plan && site.site_path) {
+      db.enqueueJob('rebuild_deploy', site.id, null, { dedupe: true });
+      flash(c, { type: 'ok', text: `Đã duyệt "${page.title}", đang dựng lại và đưa lên host.` });
+    } else {
+      flash(c, { type: 'ok', text: `Đã duyệt "${page.title}".` });
+    }
+    return c.redirect(`/sites/${site.id}/pages`);
+  });
   app.post('/sites/:id/pages/:pageId/regenerate', (c) => {
     const site = siteOr404(c);
     const page = db.getPage(Number.parseInt(c.req.param('pageId'), 10));

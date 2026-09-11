@@ -3,6 +3,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { SCHEMA_SQL } from './schema.js';
 import { nowIso, safeJsonParse } from '../core/util.js';
+import type { ContentReview } from '../generator/quality.js';
 import {
   EntitySchema,
   GeneralSettingsSchema,
@@ -100,15 +101,18 @@ export interface PageRow {
   slug: string;
   title: string;
   content: string;
+  /** published: đã đăng; needs_review: chưa đạt kiểm duyệt, giữ lại chờ người dùng duyệt hoặc sinh lại */
   status: string;
+  review: string | null;
   sort_order: number;
   published_at: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface Page extends Omit<PageRow, 'content'> {
+export interface Page extends Omit<PageRow, 'content' | 'review'> {
   content: PageContent;
+  review: ContentReview | null;
 }
 
 export interface ImageRow {
@@ -179,6 +183,13 @@ export class Db {
     if (filePath !== ':memory:') fs.mkdirSync(path.dirname(filePath), { recursive: true });
     this.raw = new DatabaseSync(filePath);
     this.raw.exec(SCHEMA_SQL);
+    this.migrate();
+  }
+
+  /** Thêm cột mới cho DB đã tạo từ bản cũ (CREATE TABLE IF NOT EXISTS không thêm cột). */
+  private migrate(): void {
+    const cols = (this.raw.prepare('PRAGMA table_info(site_pages)').all() as unknown as { name: string }[]).map((c) => c.name);
+    if (!cols.includes('review')) this.raw.exec('ALTER TABLE site_pages ADD COLUMN review TEXT');
   }
 
   close(): void {
@@ -368,7 +379,17 @@ export class Db {
   /* ---------------- pages ---------------- */
 
   private hydratePage(row: PageRow): Page {
-    return { ...row, content: safeJsonParse(row.content, {} as PageContent) };
+    return { ...row, content: safeJsonParse(row.content, {} as PageContent), review: row.review ? safeJsonParse(row.review, null as ContentReview | null) : null };
+  }
+
+  /** Trang chưa đạt kiểm duyệt của site. */
+  listPagesNeedingReview(siteId: number): Page[] {
+    return this.listPages(siteId).filter((p) => p.status === 'needs_review');
+  }
+
+  setPageStatus(id: number, status: 'published' | 'needs_review', review?: ContentReview | null): void {
+    if (review === undefined) this.raw.prepare('UPDATE site_pages SET status=?, updated_at=? WHERE id=?').run(status, nowIso(), id);
+    else this.raw.prepare('UPDATE site_pages SET status=?, review=?, updated_at=? WHERE id=?').run(status, review ? JSON.stringify(review) : null, nowIso(), id);
   }
 
   listPages(siteId: number): Page[] {
@@ -386,18 +407,19 @@ export class Db {
     return row ? this.hydratePage(row) : undefined;
   }
 
-  upsertPage(p: { site_id: number; kind: string; slug: string; title: string; content: PageContent; sort_order?: number; published_at?: string | null }): number {
+  upsertPage(p: { site_id: number; kind: string; slug: string; title: string; content: PageContent; sort_order?: number; published_at?: string | null; status?: 'published' | 'needs_review'; review?: ContentReview | null }): number {
     const existing = this.getPageBySlug(p.site_id, p.slug);
     const now = nowIso();
+    const review = p.review === undefined ? undefined : p.review ? JSON.stringify(p.review) : null;
     if (existing) {
       this.raw
-        .prepare(`UPDATE site_pages SET kind=?, title=?, content=?, sort_order=?, published_at=COALESCE(?, published_at), updated_at=? WHERE id=?`)
-        .run(p.kind, p.title, JSON.stringify(p.content), p.sort_order ?? existing.sort_order, p.published_at ?? null, now, existing.id);
+        .prepare(`UPDATE site_pages SET kind=?, title=?, content=?, sort_order=?, published_at=COALESCE(?, published_at), status=COALESCE(?, status), review=CASE WHEN ? THEN ? ELSE review END, updated_at=? WHERE id=?`)
+        .run(p.kind, p.title, JSON.stringify(p.content), p.sort_order ?? existing.sort_order, p.published_at ?? null, p.status ?? null, review === undefined ? 0 : 1, review ?? null, now, existing.id);
       return existing.id;
     }
     const r = this.raw
-      .prepare(`INSERT INTO site_pages (site_id, kind, slug, title, content, sort_order, published_at) VALUES (?,?,?,?,?,?,?)`)
-      .run(p.site_id, p.kind, p.slug, p.title, JSON.stringify(p.content), p.sort_order ?? 0, p.published_at ?? now);
+      .prepare(`INSERT INTO site_pages (site_id, kind, slug, title, content, sort_order, published_at, status, review) VALUES (?,?,?,?,?,?,?,?,?)`)
+      .run(p.site_id, p.kind, p.slug, p.title, JSON.stringify(p.content), p.sort_order ?? 0, p.published_at ?? now, p.status ?? 'published', review ?? null);
     return Number(r.lastInsertRowid);
   }
 

@@ -91,8 +91,10 @@ export interface InternalLink {
 export interface ContentGenerator {
   generatePlan(input: { brief: SiteBrief; entity: EntityData; domain: string; contentStyle?: 'story' | 'expert' | 'playbook' }): Promise<SitePlan>;
   generatePage(input: { brief: SiteBrief; entity: EntityData; plan: SitePlan; domain: string; kind: PageContent['kind']; post?: SitePlan['posts'][number]; existingTitles?: string[]; internalLinks?: InternalLink[] }): Promise<PageContent>;
-  /** Lượt biên tập: trả về bản đã sửa. */
-  editPage(input: { brief: SiteBrief; plan: SitePlan; page: PageContent; internalLinks?: InternalLink[] }): Promise<PageContent>;
+  /** Lượt biên tập: trả về bản đã sửa. feedback = lỗi do cổng kiểm duyệt chỉ ra, bắt buộc sửa. */
+  editPage(input: { brief: SiteBrief; entity?: EntityData; domain?: string; plan: SitePlan; page: PageContent; internalLinks?: InternalLink[]; feedback?: string[] }): Promise<PageContent>;
+  /** AI duyệt chất lượng: rõ ràng, trùng ý, trả lời đúng nhu cầu, có dữ kiện ngoài brief không. */
+  reviewPage(input: { brief: SiteBrief; entity: EntityData; plan: SitePlan; page: PageContent }): Promise<{ pass: boolean; summary: string; issues: { severity: 'major' | 'minor'; where: string; problem: string; fix: string }[] }>;
   suggestPostTopics(input: { brief: SiteBrief; plan: SitePlan; existingTitles: string[]; count: number }): Promise<SitePlan['posts']>;
   usage(): { inputTokens: number; outputTokens: number; calls: number };
   /** Kiểm tra key và model, không tốn token. */

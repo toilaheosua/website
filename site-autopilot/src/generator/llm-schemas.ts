@@ -73,3 +73,18 @@ export type LlmPage = z.infer<typeof LlmPageSchema>;
 export const LlmTopicsSchema = z.object({
   posts: z.array(LlmPostPlanSchema),
 });
+
+/** Kết quả AI duyệt chất lượng một trang. */
+export const LlmReviewSchema = z.object({
+  pass: z.boolean(),
+  summary: z.string(),
+  issues: z.array(
+    z.object({
+      severity: z.enum(['major', 'minor']),
+      where: z.string(),
+      problem: z.string(),
+      fix: z.string(),
+    }),
+  ),
+});
+export type LlmReview = z.infer<typeof LlmReviewSchema>;

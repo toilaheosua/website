@@ -12,6 +12,7 @@ import { buildSite, siteDirs } from '../generator/builder.js';
 import { ROUTES, UI_STRINGS } from '../generator/render-context.js';
 import { CONTENT_STYLES, resolveContentStyle } from '../generator/content-styles.js';
 import { sanitizeInternalLinks } from '../generator/markdown.js';
+import { autoFixPage, checkQuality, isPass, issuesToFeedback, type ContentReview, type QualityIssue } from '../generator/quality.js';
 import { probeEdge, probeOrigin } from '../monitor/probe.js';
 import { assignLibraryToSlots } from '../generator/library.js';
 import type { InternalLink } from '../services/types.js';
@@ -303,23 +304,77 @@ function cleanLinks(page: PageContent, validPaths: string[]): PageContent {
   };
 }
 
-/** Sinh + biên tập một trang rồi lưu DB. Dùng cho pipeline và job sinh lại. */
+/** Trang nào bỏ qua lượt biên tập và AI duyệt (ngắn, ít rủi ro). */
+const LIGHT_KINDS = new Set<PageContent['kind']>(['privacy', 'blog']);
+
+/** Cổng kiểm duyệt: kiểm tra bằng code, rồi AI duyệt (trừ trang nhẹ). Trả về danh sách lỗi gộp. */
+async function reviewContent(ctx: StepContext, page: PageContent): Promise<{ issues: QualityIssue[]; summary?: string }> {
+  const site = ctx.site;
+  const issues = checkQuality(page);
+  if (LIGHT_KINDS.has(page.kind) || !site.plan) return { issues };
+  try {
+    const ai = await ctx.services.content.reviewPage({ brief: site.brief, entity: site.entity, plan: site.plan, page });
+    for (const i of ai.issues) issues.push({ code: 'ai_review', severity: i.severity, where: i.where, message: `${i.problem} → ${i.fix}` });
+    if (!ai.pass && !ai.issues.some((i) => i.severity === 'major')) issues.push({ code: 'ai_review', severity: 'major', where: 'page', message: ai.summary });
+    return { issues, summary: ai.summary };
+  } catch (err) {
+    // AI duyệt lỗi (mạng, giới hạn) thì không chặn: phần kiểm tra bằng code vẫn có hiệu lực
+    ctx.log('warn', `AI duyệt trang lỗi, chỉ dùng kiểm tra tự động: ${errorMessage(err)}`);
+    return { issues };
+  }
+}
+
+/**
+ * Sinh → biên tập → kiểm duyệt một trang rồi lưu DB. Dùng cho pipeline và job sinh lại.
+ * Không đạt kiểm duyệt: biên tập lại một lần với danh sách lỗi; vẫn không đạt thì lưu trạng thái needs_review,
+ * trang không được dựng và không vào sitemap cho đến khi người dùng duyệt hoặc sinh lại.
+ */
 export async function generateAndSavePage(ctx: StepContext, req: RequiredPage, existingTitles: string[]): Promise<Page> {
   const site = ctx.site;
   if (!site.plan) throw new AppError('Chưa có kế hoạch nội dung');
   const internalLinks = internalLinksFor(ctx, site.plan, req.slug);
   const validPaths = internalLinks.map((l) => l.path.split('#')[0] as string);
+  const label = req.slug || 'home';
+  const finish = (p: PageContent) => autoFixPage(cleanLinks(p, validPaths));
+  const edit = (p: PageContent, feedback?: string[]) => ctx.services.content.editPage({ brief: site.brief, entity: site.entity, domain: site.domain, plan: site.plan as SitePlan, page: p, internalLinks, feedback });
+
   const draft = await ctx.services.content.generatePage({ brief: site.brief, entity: site.entity, plan: site.plan, domain: site.domain, kind: req.kind, post: req.post, existingTitles, internalLinks });
-  let page = draft;
-  if (req.kind !== 'privacy' && req.kind !== 'blog') {
+  let page = finish(draft);
+  let editFailed = false;
+  if (!LIGHT_KINDS.has(req.kind)) {
     try {
-      page = await ctx.services.content.editPage({ brief: site.brief, plan: site.plan, page: draft, internalLinks });
+      page = finish(await edit(page));
     } catch (err) {
-      ctx.log('warn', `Lượt biên tập trang ${req.slug || 'home'} lỗi, dùng bản nháp: ${errorMessage(err)}`);
+      editFailed = true;
+      ctx.log('warn', `Lượt biên tập trang ${label} lỗi: ${errorMessage(err)}`);
     }
   }
-  page = cleanLinks(page, validPaths);
-  const id = ctx.db.upsertPage({ site_id: site.id, kind: req.kind, slug: req.slug, title: page.title, content: page, sort_order: req.sortOrder, published_at: nowIso() });
+
+  let review = await reviewContent(ctx, page);
+  if (!isPass(review.issues) || editFailed) {
+    const majors = review.issues.filter((i) => i.severity === 'major').length;
+    ctx.log('info', `Trang ${label} chưa đạt kiểm duyệt (${majors} lỗi bắt buộc), biên tập lại theo danh sách lỗi`, { issues: review.issues });
+    try {
+      const fixed = finish(await edit(page, issuesToFeedback(review.issues)));
+      const second = await reviewContent(ctx, fixed);
+      // Giữ bản tốt hơn: bản sửa lại nếu đạt hoặc ít lỗi bắt buộc hơn
+      const before = review.issues.filter((i) => i.severity === 'major').length;
+      const after = second.issues.filter((i) => i.severity === 'major').length;
+      if (after <= before) {
+        page = fixed;
+        review = second;
+      }
+      editFailed = false;
+    } catch (err) {
+      ctx.log('warn', `Biên tập lại trang ${label} lỗi: ${errorMessage(err)}`);
+    }
+  }
+
+  const pass = isPass(review.issues) && !editFailed;
+  const record: ContentReview = { pass, issues: review.issues, summary: review.summary, approvedBy: pass ? 'auto' : undefined, checkedAt: nowIso() };
+  const status = pass ? 'published' : 'needs_review';
+  if (!pass) ctx.log('warn', `Trang ${label} không đạt kiểm duyệt, giữ lại chờ duyệt: ${review.issues.filter((i) => i.severity === 'major').map((i) => i.message).slice(0, 3).join('; ')}`);
+  const id = ctx.db.upsertPage({ site_id: site.id, kind: req.kind, slug: req.slug, title: page.title, content: page, sort_order: req.sortOrder, published_at: nowIso(), status, review: record });
   const saved = ctx.db.getPage(id);
   if (!saved) throw new AppError('Không lưu được trang');
   return saved;
@@ -340,15 +395,18 @@ const genContent: StepDef = {
     const todo = required.filter((r) => !existing.has(r.slug));
     if (todo.length === 0) return { status: 'done', message: `Đủ ${required.length} trang, không sinh thêm` };
     let done = 0;
+    let held = 0;
     const titles = [...existing.values()].map((p) => p.title);
     for (const req of todo) {
       ctx.log('info', `Đang viết ${req.kind}${req.slug ? ' /' + req.slug : ''} (${done + 1}/${todo.length})`);
       const page = await generateAndSavePage(ctx, req, titles);
       titles.push(page.title);
       done++;
+      if (page.status === 'needs_review') held++;
     }
     const usage = ctx.services.content.usage();
-    return { status: 'done', message: `Đã viết ${done} trang mới (tổng ${required.length}); token vào ${usage.inputTokens}, ra ${usage.outputTokens}`, output: usage };
+    const heldNote = held ? `; ${held} trang chưa đạt kiểm duyệt, vào Nội dung để duyệt hoặc sinh lại` : '';
+    return { status: 'done', message: `Đã viết ${done} trang mới (tổng ${required.length})${heldNote}; token vào ${usage.inputTokens}, ra ${usage.outputTokens}`, output: { ...usage, held } };
   },
 };
 
@@ -397,8 +455,11 @@ const build: StepDef = {
   deps: ['gen_images'],
   maxAttempts: 3,
   async run(ctx) {
+    const held = ctx.db.listPagesNeedingReview(ctx.site.id);
+    if (held.some((p) => p.kind === 'home')) throw new AppError('Trang chủ chưa đạt kiểm duyệt chất lượng. Vào Nội dung, xem lỗi rồi bấm "Duyệt và đăng" hoặc "Sinh lại", sau đó chạy lại bước này.');
     const res = await runBuild(ctx);
-    return { status: 'done', message: `${res.files} tệp, ${res.urls.length} URL`, output: { files: res.files, urls: res.urls.length } };
+    const heldNote = held.length ? `; ${held.length} trang chờ duyệt không được dựng` : '';
+    return { status: 'done', message: `${res.files} tệp, ${res.urls.length} URL${heldNote}`, output: { files: res.files, urls: res.urls.length, held: held.length } };
   },
 };
 

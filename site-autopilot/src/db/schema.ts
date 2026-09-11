@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS site_pages (
   title TEXT NOT NULL DEFAULT '',
   content TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'published',
+  review TEXT,
   sort_order INTEGER NOT NULL DEFAULT 0,
   published_at TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),

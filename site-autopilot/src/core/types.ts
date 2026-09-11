@@ -28,6 +28,8 @@ export const SiteBriefSchema = z.object({
   targetCountries: z.array(z.string()).default([]),
   /** Ghi chú thêm cho AI, ví dụ: tránh nhắc đối thủ, nhấn mạnh bảo hành */
   notes: z.string().default(''),
+  /** Đoạn văn mẫu đã được chủ thương hiệu duyệt: AI học giọng, cách xưng hô, mức chuyên môn từ đây */
+  styleSamples: z.string().default(''),
 });
 export type SiteBrief = z.infer<typeof SiteBriefSchema>;
 

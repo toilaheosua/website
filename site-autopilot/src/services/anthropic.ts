@@ -3,8 +3,8 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import type { z } from 'zod';
 import type { ContentGenerator, InternalLink } from './types.js';
 import type { EntityData, PageContent, SiteBrief, SitePlan } from '../core/types.js';
-import { LlmPageSchema, LlmPlanSchema, LlmTopicsSchema, type LlmPage, type LlmPlan } from '../generator/llm-schemas.js';
-import { CONTENT_STYLES, contentStyleGuide, ENGAGEMENT_RULES, resolveContentStyle, type ContentStyleId } from '../generator/content-styles.js';
+import { LlmPageSchema, LlmPlanSchema, LlmReviewSchema, LlmTopicsSchema, type LlmPage, type LlmPlan, type LlmReview } from '../generator/llm-schemas.js';
+import { CONTENT_STYLES, contentStyleGuide, ENGAGEMENT_RULES, PAGE_STRUCTURES, resolveContentStyle, type ContentStyleId } from '../generator/content-styles.js';
 import { AppError, TransientError } from '../core/errors.js';
 import { createLogger } from '../core/logger.js';
 import { slugify } from '../core/util.js';
@@ -28,18 +28,30 @@ function languageName(lang: string): string {
   return lang === 'en' ? 'English' : 'tiếng Việt';
 }
 
-function systemPrompt(brief: SiteBrief, style: ContentStyleId): string {
+function samplesBlock(brief: SiteBrief): string {
+  const t = brief.styleSamples.trim();
+  if (!t) return '';
+  return `VĂN PHONG MẪU ĐÃ ĐƯỢC CHỦ THƯƠNG HIỆU DUYỆT (học giọng, cách xưng hô, mức chuyên môn và độ cụ thể từ đây; không sao chép nguyên văn, không lặp lại ý):
+"""
+${t.slice(0, 4000)}
+"""
+`;
+}
+
+function systemPrompt(brief: SiteBrief, style: ContentStyleId, kind?: PageContent['kind']): string {
   const lang = languageName(brief.language);
   return `Bạn là chiến lược gia nội dung kiêm copywriter cấp cao, chuyên viết website cho doanh nghiệp nhỏ và blog chuyên ngành. Toàn bộ nội dung viết bằng ${lang}, đúng chính tả, đủ dấu, giọng tự nhiên như người trong nghề viết cho khách hàng thật.
 
 ${contentStyleGuide(style)}
 
+${samplesBlock(brief)}
 ${ENGAGEMENT_RULES}
+${kind ? '\n' + PAGE_STRUCTURES[kind] + '\n' : ''}
 
 Nguyên tắc chất lượng (bắt buộc, vì nội dung sẽ được Google đánh giá theo tiêu chí hữu ích và E-E-A-T):
 1. Cụ thể, có giá trị thực: mỗi đoạn phải đưa ra thông tin người đọc dùng được (quy trình, tiêu chí lựa chọn, lỗi thường gặp, ví dụ tình huống, chi phí tham khảo nếu hợp lý). Không viết đoạn chỉ để lấp chỗ.
 2. Cấm câu sáo rỗng và khuôn mẫu AI: không dùng "trong thời đại 4.0", "không thể phủ nhận rằng", "hãy cùng tìm hiểu", "tóm lại", "như đã đề cập ở trên", "chúng tôi tự hào", "hàng đầu", "uy tín số 1", dấu gạch ngang dài, và không mở đầu mọi đoạn bằng cùng một cấu trúc.
-3. Không bịa sự kiện: không tự nghĩ ra giải thưởng, chứng chỉ, số năm kinh nghiệm, số lượng khách hàng, giá cụ thể hay tên đối tác nếu brief không cung cấp. Nếu cần con số, dùng cách nói khoảng hoặc điều kiện ("thường dao động", "tùy quy mô").
+3. Không bịa sự kiện: không tự nghĩ ra giải thưởng, chứng chỉ, số năm kinh nghiệm, số lượng khách hàng, giá, khoảng giá, thói quen khách hàng hay tên đối tác nếu brief không cung cấp. Không có nguồn thì không khẳng định: không biết giá thì giải thích yếu tố ảnh hưởng đến giá; không có trải nghiệm thật thì không viết như đã trực tiếp trải nghiệm.
 4. Từ khóa dùng tự nhiên, xuất hiện ở tiêu đề, H1, đoạn mở đầu và vài chỗ hợp lý. Tuyệt đối không nhồi nhét.
 5. Mỗi trang, mỗi bài phải có góc nhìn riêng, không lặp lại đoạn văn giữa các trang.
 6. Markdown trong trường body: đoạn văn, danh sách "- ", danh sách đánh số "1. ", in đậm **, bảng markdown, callout dạng "> **Mẹo:** ...", liên kết [chữ](đường dẫn). Không dùng thẻ HTML, không dùng tiêu đề # bên trong body vì heading đã có trường riêng.
@@ -82,19 +94,20 @@ function linksBlock(links: InternalLink[] | undefined): string {
 
 const PAGE_GUIDES: Record<PageContent['kind'], string> = {
   home: `Trang chủ. Mục tiêu: trong 5 giây người đọc hiểu doanh nghiệp làm gì, cho ai, vì sao nên chọn. Cấu trúc: h1 chứa từ khóa chính và khu vực; intro 2 đến 3 câu theo đúng kỹ thuật móc câu; 4 đến 6 section: giới thiệu ngắn theo kiểu viết đã chọn, các dịch vụ chính (tóm tắt, chi tiết để trang dịch vụ), lý do lựa chọn (dựa trên điểm khác biệt trong brief, không bịa), quy trình làm việc hoặc trải nghiệm khách, khu vực phục vụ, kêu gọi liên hệ. faq: 4 đến 6 câu hỏi khách thật sự hay hỏi. services và keyTakeaways để rỗng.`,
-  about: `Trang Giới thiệu. Kể câu chuyện doanh nghiệp một cách đáng tin theo kiểu viết đã chọn: xuất phát điểm, cách làm việc, giá trị theo đuổi, đội ngũ (chỉ nêu người có trong brief), cam kết. 3 đến 5 section. Có một section về tác giả/người phụ trách nội dung nếu brief có tên. faq, services, keyTakeaways để rỗng.`,
-  services: `Trang Dịch vụ tổng hợp. intro nêu phạm vi dịch vụ theo kỹ thuật móc câu. Trường services: mỗi dịch vụ trong kế hoạch một mục với body 150 đến 300 từ: phù hợp với ai, gồm những gì, quy trình, điều cần lưu ý, kết quả mong đợi, có callout hoặc checklist khi hợp lý. sections: 1 đến 2 section chung (cách báo giá, cam kết). faq: 3 đến 5 câu. keyTakeaways để rỗng.`,
+  about: `Trang Giới thiệu. Con người và cách làm việc có thật theo kiểu viết đã chọn: xuất phát điểm, cách làm việc, tiêu chuẩn giữ, đội ngũ (chỉ nêu người có trong brief), cam kết. 3 đến 4 section, không checklist, không bảng, không "Bước tiếp theo". Có một section về tác giả/người phụ trách nội dung nếu brief có tên. faq, services, keyTakeaways để rỗng.`,
+  services: `Trang Dịch vụ tổng hợp. intro nêu phạm vi dịch vụ và cho ai. Trường services: mỗi dịch vụ trong kế hoạch một mục, body 120 đến 300 từ theo đúng cấu trúc trang dịch vụ (vấn đề → phạm vi → cách làm → quy trình → điều kiện báo giá → liên hệ). sections: 1 đến 2 section chung (cách báo giá, cam kết). faq: 3 đến 5 câu. keyTakeaways để rỗng.`,
   blog: `Trang danh sách Blog. Chỉ cần title, metaDescription, h1, intro 2 đến 3 câu mô tả blog viết về gì và cho ai. sections, faq, services, keyTakeaways để rỗng.`,
-  post: `Bài viết blog 1200 đến 1800 từ, thật sự hữu ích, đúng góc nhìn (angle) được giao, tối ưu tự nhiên cho từ khóa mục tiêu, viết theo kiểu viết đã chọn. keyTakeaways: 3 đến 5 ý "Tóm tắt nhanh". intro theo kỹ thuật móc câu. 5 đến 8 section với heading có thông tin; có ít nhất một bảng hoặc checklist, một ví dụ tình huống, một đến hai callout, hai đến ba liên kết nội bộ đặt giữa bài. Section cuối là "Bước tiếp theo" nói rõ việc nên làm ngay và cách liên hệ. excerpt 1 đến 2 câu có lợi ích cụ thể. faq 2 đến 4 câu liên quan trực tiếp. services để rỗng.`,
-  contact: `Trang Liên hệ. intro thân thiện nêu cách liên hệ nhanh nhất và thời gian phản hồi hợp lý (không cam kết số cụ thể nếu brief không có). 2 đến 3 section: thông tin liên hệ (dùng đúng dữ liệu trong brief, không bịa), khu vực phục vụ, điều nên chuẩn bị trước khi liên hệ (checklist). faq, services, keyTakeaways để rỗng.`,
-  privacy: `Trang Chính sách bảo mật cho website giới thiệu doanh nghiệp: thu thập thông tin gì (form liên hệ, cookie phân tích), dùng để làm gì, lưu trữ và chia sẻ với ai (chỉ đơn vị phân tích như Google Analytics nếu có), quyền của người dùng, cách liên hệ về quyền riêng tư, ngày cập nhật ghi "Cập nhật lần cuối: theo ngày xuất bản". 5 đến 7 section ngắn, giọng rõ ràng, không cần kỹ thuật móc câu. faq, services, keyTakeaways để rỗng.`,
+  post: `Bài viết blog thật sự hữu ích, đúng góc nhìn (angle) được giao, tối ưu tự nhiên cho từ khóa mục tiêu, viết theo kiểu viết đã chọn và đúng cấu trúc theo ý định tìm kiếm (giải đáp, so sánh hay hướng dẫn). keyTakeaways: 3 đến 5 ý "Tóm tắt nhanh". 4 đến 7 section với heading có thông tin; bảng, checklist, ví dụ tình huống, callout chỉ dùng khi nội dung thật sự cần; hai đến ba liên kết nội bộ đặt giữa bài. Section cuối là "Bước tiếp theo" ngắn. excerpt 1 đến 2 câu có lợi ích cụ thể. faq 2 đến 4 câu liên quan trực tiếp. services để rỗng.`,
+  contact: `Trang Liên hệ. intro thân thiện nêu cách liên hệ nhanh nhất và thời gian phản hồi hợp lý (không cam kết số cụ thể nếu brief không có). 2 đến 3 section ngắn: thông tin liên hệ (dùng đúng dữ liệu trong brief, không bịa), khu vực phục vụ, điều nên chuẩn bị trước khi liên hệ. faq, services, keyTakeaways để rỗng.`,
+  privacy: `Trang Chính sách bảo mật cho website tĩnh giới thiệu doanh nghiệp. Website này không có form thu thập dữ liệu, không tài khoản, không thanh toán; người đọc liên hệ qua điện thoại, Zalo, email hoặc mạng xã hội bên ngoài. Mô tả: website thu thập gì (chỉ dữ liệu kỹ thuật của máy chủ và, nếu được cho biết có Google Analytics, dữ liệu thống kê ẩn danh), dùng để làm gì, không bán hay chia sẻ, liên kết ngoài do bên thứ ba quản lý, quyền của người dùng, cách liên hệ về quyền riêng tư, "Cập nhật lần cuối: theo ngày xuất bản". 4 đến 6 section ngắn, giọng rõ ràng, không móc câu, không callout. faq, services, keyTakeaways để rỗng.`,
 };
 
 const EDITOR_CHECKLIST = `Bạn là biên tập viên kỳ cựu. Hãy sửa lại nội dung JSON sau theo danh sách kiểm tra, giữ nguyên cấu trúc và ý chính, trả về JSON cùng cấu trúc:
-1. Hai câu đầu của intro phải là móc câu: nói đúng tình huống hoặc lợi ích cụ thể của người đọc, xưng "bạn". Nếu đang mở bằng định nghĩa hay câu chung chung, viết lại.
+1. Hai câu đầu của intro phải là móc câu đúng kiểu viết: nói đúng tình huống hoặc lợi ích cụ thể của người đọc, hoặc mở bằng khung cảnh cụ thể với kiểu Kể chuyện. Nếu đang mở bằng định nghĩa hay câu chung chung, viết lại. Trang Giới thiệu và Chính sách không cần móc câu.
 2. Xóa hoặc viết lại mọi câu sáo rỗng, câu không mang thông tin, câu mở đầu kiểu AI, dấu gạch ngang dài.
 3. Thêm chi tiết cụ thể ở những đoạn còn chung chung: tiêu chí, bước làm, ví dụ tình huống, lưu ý thực tế. Không thêm số liệu, giải thưởng hay chứng chỉ không có trong brief.
-4. Đảm bảo có đủ yếu tố giữ chân: ít nhất một callout "> **Mẹo:**" hoặc "> **Lưu ý:**", bảng hoặc checklist khi nội dung có so sánh hay liệt kê việc, hai đến ba liên kết nội bộ đặt giữa bài chỉ dùng đường dẫn được cấp, đoạn cuối "Bước tiếp theo" cụ thể.
+4. Yếu tố giữ chân chỉ khi nội dung thật sự cần: callout "> **Mẹo:**" hoặc "> **Lưu ý:**" ở chỗ người đọc dễ mắc lỗi, bảng khi có từ hai phương án, checklist khi có từ ba việc; bỏ khối nào chỉ để cho có. Bài blog và trang dịch vụ: hai đến ba liên kết nội bộ giữa bài chỉ dùng đường dẫn được cấp, đoạn cuối "Bước tiếp theo" cụ thể. Trang Giới thiệu, Liên hệ, Chính sách: không thêm các khối này.
+4b. Xóa mọi dữ kiện không có trong thông tin nền: giá, khoảng giá, số năm, số khách, thói quen khách hàng, giải thưởng, tên đối tác. Thay bằng cách nói về yếu tố ảnh hưởng hoặc cách làm.
 5. Kiểm tra từ khóa xuất hiện tự nhiên ở title, h1, intro; giảm nếu lặp quá 5 lần trong 300 từ.
 6. Xen kẽ độ dài câu và đoạn; tách đoạn dài hơn 4 câu; đổi các heading chung chung thành heading có thông tin hoặc kết quả.
 7. Title 50 đến 65 ký tự có từ khóa; metaDescription 140 đến 158 ký tự, có lợi ích và lời gọi hành động nhẹ.
@@ -231,27 +244,56 @@ Quy ước trường:
 - keyTakeaways: chỉ bài blog, 3 đến 5 ý; trang khác để mảng rỗng.
 - excerpt: chỉ dùng cho bài blog, còn lại để rỗng.
 - Mỗi section: heading, body markdown, imageQuery (chuỗi rỗng nếu section không cần ảnh; chỉ 1 đến 2 section nên có ảnh).`;
-    const out = await this.structured({ model: this.model, system: systemPrompt(brief, style), user, schema: LlmPageSchema, maxTokens: 20_000 });
+    const out = await this.structured({ model: this.model, system: systemPrompt(brief, style, kind), user, schema: LlmPageSchema, maxTokens: 20_000 });
     return pageFromLlm(kind, out, post);
   }
 
-  async editPage(input: { brief: SiteBrief; plan: SitePlan; page: PageContent; internalLinks?: InternalLink[] }): Promise<PageContent> {
+  async editPage(input: { brief: SiteBrief; entity?: EntityData; domain?: string; plan: SitePlan; page: PageContent; internalLinks?: InternalLink[]; feedback?: string[] }): Promise<PageContent> {
     const { brief, plan, page } = input;
     const style = plan.contentStyle ?? resolveContentStyle(brief);
+    const background = input.entity ? briefBlock(brief, input.entity, input.domain ?? '') : `Thương hiệu: ${brief.brandName}, ngành: ${brief.industry}${brief.location ? ', khu vực: ' + brief.location : ''}`;
+    const feedback = input.feedback?.length ? `\nCỔNG KIỂM DUYỆT ĐÃ TỪ CHỐI BẢN NÀY. Bắt buộc sửa hết các lỗi sau (mục BẮT BUỘC), sửa thêm mục "nên" nếu được:\n${input.feedback.map((x) => '- ' + x).join('\n')}\n` : '';
     const user = `${EDITOR_CHECKLIST}
-
-Thông tin nền:
-- Thương hiệu: ${brief.brandName}, ngành: ${brief.industry}${brief.location ? ', khu vực: ' + brief.location : ''}
+${feedback}
+Thông tin nền (đây là toàn bộ dữ kiện được phép dùng; mọi dữ kiện khác trong bài phải bỏ):
+${background}
 - Kiểu viết: ${CONTENT_STYLES[style].name}
 - Giọng văn thương hiệu: ${plan.brandVoice}
+- Điểm khác biệt đã chốt: ${plan.differentiators.join('; ')}
 - Loại trang: ${page.kind}${page.targetKeyword ? ', từ khóa mục tiêu: ' + page.targetKeyword : ''}
 ${linksBlock(input.internalLinks)}
 
 Nội dung cần biên tập (JSON):
 ${JSON.stringify(toLlmPage(page))}`;
-    const out = await this.structured({ model: this.editorModel, system: systemPrompt(brief, style), user, schema: LlmPageSchema, maxTokens: 20_000 });
+    const out = await this.structured({ model: this.editorModel, system: systemPrompt(brief, style, page.kind), user, schema: LlmPageSchema, maxTokens: 20_000 });
     const edited = pageFromLlm(page.kind, out);
     return { ...page, ...edited, kind: page.kind, publishedAt: page.publishedAt };
+  }
+
+  async reviewPage(input: { brief: SiteBrief; entity: EntityData; plan: SitePlan; page: PageContent }): Promise<LlmReview> {
+    const { brief, entity, plan, page } = input;
+    const style = plan.contentStyle ?? resolveContentStyle(brief);
+    const system = `Bạn là trưởng ban biên tập khó tính, duyệt nội dung website trước khi xuất bản. Bạn không sửa bài, chỉ chấm đạt hay không đạt và chỉ ra lỗi cụ thể. Trả lời bằng ${languageName(brief.language)}.`;
+    const user = `Duyệt trang "${page.kind}" dưới đây. Trả về JSON: pass (true khi không có lỗi major), summary (2 câu), issues (mỗi lỗi: severity major/minor, where là vị trí như intro, sections.2, faq.1, services.0, problem, fix ngắn gọn).
+
+Tiêu chí major (không đạt):
+1. Có dữ kiện không có trong thông tin nền: giá hoặc khoảng giá, số năm, số lượng khách, giải thưởng, chứng chỉ, tên người, thói quen khách hàng, cam kết thời gian cụ thể.
+2. Không trả lời đúng nhu cầu của loại trang hoặc từ khóa mục tiêu; người đọc đọc xong vẫn không biết làm gì.
+3. Nội dung trùng ý giữa các mục, lặp lại một ý nhiều lần bằng lời khác.
+4. Văn mẫu AI hoặc quảng cáo rỗng chiếm phần lớn: câu không mang thông tin, khẳng định không có bằng chứng.
+5. Sai kiểu viết đã chọn hoặc xưng hô không nhất quán trong bài.
+Tiêu chí minor: câu dài khó đọc, heading chung chung, khối callout/bảng/checklist đặt cho có, thiếu liên kết nội bộ, title hay meta chưa nêu lợi ích.
+Không bắt lỗi về độ dài nếu bài đã trả lời trọn nhu cầu.
+
+Thông tin nền (toàn bộ dữ kiện được phép):
+${briefBlock(brief, entity, '')}
+- Kiểu viết: ${CONTENT_STYLES[style].name}
+- Điểm khác biệt đã chốt: ${plan.differentiators.join('; ')}
+${page.targetKeyword ? '- Từ khóa mục tiêu: ' + page.targetKeyword : ''}
+
+Nội dung (JSON):
+${JSON.stringify(toLlmPage(page))}`;
+    return this.structured({ model: this.editorModel, system, user, schema: LlmReviewSchema, maxTokens: 4000 });
   }
 
   async suggestPostTopics(input: { brief: SiteBrief; plan: SitePlan; existingTitles: string[]; count: number }): Promise<SitePlan['posts']> {

@@ -91,7 +91,8 @@ const handlers: Record<string, Handler> = {
       const req: RequiredPage = { kind: 'post', slug, sortOrder: order++, post: t };
       const page = await generateAndSavePage(ctx, req, existingTitles);
       existingTitles.push(page.title);
-      created.push(`https://${ctx.site.domain}/${slug}/`);
+      if (page.status === 'published') created.push(`https://${ctx.site.domain}/${slug}/`);
+      else ctx.log('warn', `Bài "${page.title}" chưa đạt kiểm duyệt, giữ lại chờ duyệt`);
     }
     ctx.updateSite({ plan: { ...plan, posts: [...plan.posts, ...topics.filter((t) => !plan.posts.some((p) => p.slug === t.slug))] } });
     await refreshImages(ctx);

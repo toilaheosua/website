@@ -16,8 +16,9 @@ import { Badge } from './layout.js';
 /*  Trang dashboard: chọn trang + iframe                                 */
 /* ------------------------------------------------------------------ */
 
-export function EditorPage(props: { site: Site; pages: { id: number; title: string; slug: string; kind: string }[]; current: number }) {
+export function EditorPage(props: { site: Site; pages: { id: number; title: string; slug: string; kind: string; status: string }[]; current: number }) {
   const { site } = props;
+  const cur = props.pages.find((p) => p.id === props.current);
   return (
     <>
       <div class="actions" style="justify-content:space-between;margin-bottom:10px">
@@ -31,11 +32,22 @@ export function EditorPage(props: { site: Site; pages: { id: number; title: stri
           <select id="editor-page" style="width:auto" onchange={`location.href='/sites/${site.id}/editor?page='+this.value`}>
             {props.pages.map((p) => (
               <option value={String(p.id)} selected={p.id === props.current}>
+                {p.status === 'needs_review' ? '⚠ ' : ''}
                 {p.kind === 'post' ? 'Bài: ' : ''}
                 {p.title}
               </option>
             ))}
           </select>
+          {cur?.status === 'needs_review' ? (
+            <form method="post" action={`/sites/${site.id}/pages/${cur.id}/approve`} class="inline">
+              <button class="btn sm" type="submit" style="background:#16a34a;border-color:#16a34a" onclick="return confirm('Đăng trang này dù chưa đạt kiểm duyệt? Hãy lưu thay đổi trong trang trước.')">
+                Duyệt và đăng
+              </button>
+            </form>
+          ) : null}
+          <a class="btn secondary sm" href={`/sites/${site.id}/pages/${props.current}`}>
+            Lỗi kiểm duyệt
+          </a>
           <a class="btn secondary sm" href={`/sites/${site.id}/library`}>
             Kho ảnh
           </a>
@@ -242,11 +254,11 @@ export function mountEditor(app: Hono, deps: EditorDeps): void {
   app.get('/sites/:id/editor', (c) => {
     const site = deps.siteOr404(c);
     if (!site) return c.notFound();
-    const pages = db.listPages(site.id).filter((p) => p.status === 'published');
+    const pages = db.listPages(site.id).filter((p) => p.status === 'published' || p.status === 'needs_review');
     if (!site.plan || pages.length === 0) return c.text('Site chưa có nội dung để sửa. Chờ bước "Viết nội dung" hoàn tất.', 400);
     const wanted = Number.parseInt(c.req.query('page') ?? '', 10);
     const current = pages.find((p) => p.id === wanted) ?? pages.find((p) => p.kind === 'home') ?? (pages[0] as (typeof pages)[number]);
-    return deps.render(c as never, `Sửa ${site.domain}`, 'sites', EditorPage({ site, pages: pages.map((p) => ({ id: p.id, title: p.title, slug: p.slug, kind: p.kind })), current: current.id }));
+    return deps.render(c as never, `Sửa ${site.domain}`, 'sites', EditorPage({ site, pages: pages.map((p) => ({ id: p.id, title: p.title, slug: p.slug, kind: p.kind, status: p.status })), current: current.id }));
   });
 
   app.get('/sites/:id/editor/style.css', (c) => {
