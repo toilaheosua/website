@@ -92,6 +92,43 @@ describe('cổng kiểm duyệt chất lượng (mock)', () => {
     expect(fs.existsSync(path.join(outDir, ...approved.slug.split('/'), 'index.html'))).toBe(true);
   }, 120000);
 
+  it('kiểm duyệt lại trang cũ: gắn kết quả, trang đã đăng vẫn giữ nguyên', async () => {
+    const config = loadConfig({ MOCK_MODE: '1', DATA_DIR: tmp, WORKER_CONCURRENCY: '6', ADMIN_PASSWORD: 'x', NS_POLL_INTERVAL_MIN: '0', REBUILD_DEBOUNCE_SEC: '0' });
+    const db = new Db(':memory:');
+    const services = createServices(config, db);
+    (services.cloudflare as MockCloudflare).activateAfterPolls = 1;
+    ensureDefaultServer(config, db);
+    const server = db.listServers()[0]!;
+    const brief = SiteBriefSchema.parse({ brandName: 'Tiệm Bánh Hoa', industry: 'Tiệm bánh', location: 'Phan Rang', services: ['Bánh kem'], keywords: ['bánh kem'], postsCount: 1, targetCountries: ['VN'] });
+    const id = db.createSite({ domain: 'banhhoa3.com', server_id: server.id, brief, entity: EntitySchema.parse({ type: 'LocalBusiness', name: 'Tiệm Bánh Hoa' }) });
+    db.ensureSteps(id, STEPS.map((s) => s.id));
+    const worker = new Worker({ db, config, services, steps: STEPS });
+    await runToEnd(worker, db, id);
+    expect(db.getSite(id)?.status).toBe('live');
+    // Giả lập trang viết trước khi có cổng kiểm duyệt: xóa biên bản, làm hỏng một trang
+    const about = db.listPages(id).find((p) => p.kind === 'about')!;
+    for (const p of db.listPages(id)) db.setPageStatus(p.id, 'published', null);
+    db.upsertPage({ site_id: id, kind: about.kind, slug: about.slug, title: about.title, content: { ...about.content, intro: `MOCK_BAD ${about.content.intro}` } });
+    expect(db.getPage(about.id)?.review).toBeNull();
+
+    const app = createApp({ db, config, services, worker, steps: STEPS });
+    const login = await app.request('/login', { method: 'POST', body: new URLSearchParams({ user: 'admin', password: 'x', next: '/' }), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    const cookie = login.headers.get('set-cookie')?.split(';')[0] ?? '';
+    expect(await (await app.request(`/sites/${id}/pages`, { headers: { cookie } })).text()).toContain('>Chưa kiểm</span>');
+    const res = await app.request(`/sites/${id}/pages/review`, { method: 'POST', headers: { cookie } });
+    expect(res.status).toBe(302);
+    await worker.tick();
+    await worker.drain(30_000);
+    const pages = db.listPages(id);
+    expect(pages.every((p) => p.review !== null)).toBe(true);
+    expect(pages.every((p) => p.status === 'published')).toBe(true);
+    const aboutAfter = db.getPage(about.id)!;
+    expect(aboutAfter.review?.pass).toBe(false);
+    const list = await (await app.request(`/sites/${id}/pages`, { headers: { cookie } })).text();
+    expect(list).toContain('Đã đăng, có 1 lỗi');
+    expect(list).not.toContain('>Chưa kiểm</span>');
+  }, 120000);
+
   it('trang chủ không đạt thì bước dựng báo lỗi rõ ràng', async () => {
     const config = loadConfig({ MOCK_MODE: '1', DATA_DIR: tmp, WORKER_CONCURRENCY: '6', ADMIN_PASSWORD: 'x', NS_POLL_INTERVAL_MIN: '0', REBUILD_DEBOUNCE_SEC: '0' });
     const db = new Db(':memory:');

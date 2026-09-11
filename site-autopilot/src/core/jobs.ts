@@ -6,7 +6,8 @@ import type { StepDef } from './pipeline.js';
 import { makeStepContext } from './context.js';
 import { AppError } from './errors.js';
 import { errorMessage, safeJsonParse, slugify } from './util.js';
-import { applyRateLimit, applyWafRules, generateAndSavePage, refreshSiteImages, requiredPages, runBuild, runDeploy, submitIndexNow, type RequiredPage } from './steps.js';
+import { applyRateLimit, applyWafRules, generateAndSavePage, refreshSiteImages, requiredPages, reviewContent, runBuild, runDeploy, submitIndexNow, type RequiredPage } from './steps.js';
+import { isPass, type ContentReview } from '../generator/quality.js';
 import { siteDirs } from '../generator/builder.js';
 import { saveLibraryImage } from '../generator/library.js';
 import { checkSiteHealth } from '../monitor/health.js';
@@ -46,6 +47,30 @@ const handlers: Record<string, Handler> = {
     const d = await runDeploy(ctx);
     ctx.log('info', `Dựng lại và đưa lên host: ${b.files} tệp dựng, ${d.files} tệp tải lên, ${d.unchanged} giữ nguyên${d.removed ? `, ${d.removed} xóa` : ''}`);
     return { built: b.files, uploaded: d.files, unchanged: d.unchanged, removed: d.removed };
+  },
+
+  /**
+   * Kiểm duyệt lại nội dung đã có (không viết lại): chạy kiểm tra tự động + AI duyệt, lưu kết quả.
+   * Trang đã đăng vẫn giữ nguyên trên website; chỉ gắn nhãn để người dùng quyết định sửa hay sinh lại.
+   * payload: { pageId? } (không có = tất cả trang).
+   */
+  async review_pages(env, payload) {
+    const ctx = siteCtx(env, 'review_pages');
+    const pageId = payload.pageId ? Number(payload.pageId) : null;
+    const pages = ctx.db.listPages(ctx.site.id).filter((p) => (pageId ? p.id === pageId : true));
+    if (!pages.length) throw new AppError('Không có trang để kiểm duyệt');
+    let passed = 0;
+    let failed = 0;
+    for (const page of pages) {
+      const r = await reviewContent(ctx, page.content);
+      const pass = isPass(r.issues);
+      const record: ContentReview = { pass, issues: r.issues, summary: r.summary, approvedBy: pass ? 'auto' : undefined, checkedAt: new Date().toISOString() };
+      ctx.db.setPageStatus(page.id, page.status === 'needs_review' ? 'needs_review' : 'published', record);
+      pass ? passed++ : failed++;
+      ctx.log(pass ? 'info' : 'warn', `Kiểm duyệt "${page.title}": ${pass ? 'đạt' : `chưa đạt, ${r.issues.filter((i) => i.severity === 'major').length} lỗi bắt buộc`}${r.issues.length ? ` (${r.issues.length} ghi chú)` : ''}`);
+    }
+    ctx.log('info', `Kiểm duyệt lại ${pages.length} trang: ${passed} đạt, ${failed} chưa đạt`);
+    return { pages: pages.length, passed, failed };
   },
 
   async health_check(env) {
@@ -248,6 +273,7 @@ export async function runJob(env: JobEnv): Promise<unknown> {
 
 export const JOB_LABELS: Record<string, string> = {
   rebuild_deploy: 'Dựng lại và đưa lên host',
+  review_pages: 'Kiểm duyệt lại nội dung',
   health_check: 'Kiểm tra sức khỏe',
   generate_post: 'Viết bài blog mới',
   regenerate_page: 'Sinh lại trang',

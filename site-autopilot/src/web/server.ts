@@ -386,6 +386,14 @@ export function createApp(deps: WebDeps): Hono {
     if (!site || !page || page.site_id !== site.id) return c.notFound();
     return render(c, page.title, 'sites', PageDetail({ site, page }));
   });
+  // Đặt trước route :pageId để "review" không bị hiểu là id trang
+  app.post('/sites/:id/pages/review', (c) => {
+    const site = siteOr404(c);
+    if (!site) return c.notFound();
+    db.enqueueJob('review_pages', site.id, null, { dedupe: true, maxAttempts: 2 });
+    flash(c, { type: 'info', text: 'Đang kiểm duyệt lại toàn bộ trang (không viết lại). Kết quả hiện ở cột Kiểm duyệt sau vài phút.' });
+    return c.redirect(`/sites/${site.id}/pages`);
+  });
   app.post('/sites/:id/pages/:pageId', async (c) => {
     const site = siteOr404(c);
     const page = db.getPage(Number.parseInt(c.req.param('pageId'), 10));
@@ -399,6 +407,14 @@ export function createApp(deps: WebDeps): Hono {
     } catch (err) {
       flash(c, { type: 'err', text: `JSON không hợp lệ: ${errorMessage(err)}` });
     }
+    return c.redirect(`/sites/${site.id}/pages/${page.id}`);
+  });
+  app.post('/sites/:id/pages/:pageId/review', (c) => {
+    const site = siteOr404(c);
+    const page = db.getPage(Number.parseInt(c.req.param('pageId'), 10));
+    if (!site || !page || page.site_id !== site.id) return c.notFound();
+    db.enqueueJob('review_pages', site.id, { pageId: page.id }, { maxAttempts: 2 });
+    flash(c, { type: 'info', text: `Đang kiểm duyệt lại "${page.title}".` });
     return c.redirect(`/sites/${site.id}/pages/${page.id}`);
   });
   app.post('/sites/:id/pages/:pageId/approve', (c) => {

@@ -707,8 +707,16 @@ function ReviewBadge(props: { page: PageRow }) {
       </span>
     );
   }
-  if (!r) return <span class="muted">Chưa kiểm</span>;
+  if (!r) return <span class="muted" title="Trang viết trước khi có cổng kiểm duyệt. Bấm Kiểm duyệt lại để chấm.">Chưa kiểm</span>;
   const minors = r.issues.filter((i) => i.severity === 'minor').length;
+  if (!r.pass) {
+    const majors = r.issues.filter((i) => i.severity === 'major').length;
+    return (
+      <span class="badge failed" title={r.issues.map((i) => i.message).join('\n')}>
+        Đã đăng, có {majors} lỗi
+      </span>
+    );
+  }
   return (
     <span class="badge done" title={r.summary ?? ''}>
       {r.approvedBy === 'user' ? 'Người dùng duyệt' : 'Đạt'}
@@ -726,7 +734,12 @@ export function PagesList(props: { site: Site; pages: PageRow[] }) {
       <p>
         <a href={`/sites/${props.site.id}`}>← Quay lại site</a>
       </p>
-      <div class="help" style="margin-bottom:12px">Mỗi trang đi qua cổng kiểm duyệt (kiểm tra tự động + AI duyệt) trước khi đăng. Trang "Chưa đạt" được giữ lại, không dựng và không vào sitemap; bạn xem lỗi trong chi tiết trang rồi sửa bằng Chỉnh sửa trực quan, bấm "Duyệt và đăng" hoặc "Sinh lại".</div>
+      <div class="help" style="margin-bottom:12px">Mỗi trang đi qua cổng kiểm duyệt (kiểm tra tự động + AI duyệt) trước khi đăng. Trang "Chưa đạt" được giữ lại, không dựng và không vào sitemap; bạn xem lỗi trong chi tiết trang rồi sửa bằng Chỉnh sửa trực quan, bấm "Duyệt và đăng" hoặc "Sinh lại". Trang "Chưa kiểm" là trang viết trước khi có cổng kiểm duyệt: bấm "Kiểm duyệt lại tất cả" để chấm mà không viết lại (mỗi trang một lượt gọi AI ngắn).</div>
+      <form method="post" action={`/sites/${props.site.id}/pages/review`} class="inline" style="margin-bottom:12px">
+        <button class="btn secondary sm" type="submit">
+          Kiểm duyệt lại tất cả (không viết lại)
+        </button>
+      </form>
       <form method="post" action={`/sites/${props.site.id}/replace-text`} class="card tight" style="margin-bottom:14px;background:var(--bg)">
         <strong>Thay chữ trong toàn bộ nội dung</strong>
         <div class="help">Dùng khi sửa tên thương hiệu, địa chỉ, số điện thoại viết sai ở mọi trang. Phân biệt hoa thường, thay đúng chuỗi đã nhập, xong tự dựng lại và đưa lên host.</div>
@@ -819,8 +832,8 @@ export function PageDetail(props: { site: Site; page: PageRow }) {
         </dd>
       </div>
       {props.page.review?.issues.length ? (
-        <div class={`alert ${props.page.status === 'needs_review' ? 'warn' : 'info'}`}>
-          <b>{props.page.status === 'needs_review' ? 'Lỗi cần sửa trước khi đăng' : 'Góp ý của cổng kiểm duyệt'}</b>
+        <div class={`alert ${props.page.status === 'needs_review' || !props.page.review?.pass ? 'warn' : 'info'}`}>
+          <b>{props.page.status === 'needs_review' ? 'Lỗi cần sửa trước khi đăng' : props.page.review?.pass ? 'Góp ý của cổng kiểm duyệt' : 'Trang đang đăng nhưng chưa đạt kiểm duyệt'}</b>
           <ul class="small" style="margin:6px 0 0;padding-left:18px">
             {props.page.review.issues.map((i) => (
               <li>
@@ -847,6 +860,11 @@ export function PageDetail(props: { site: Site; page: PageRow }) {
           </div>
         </div>
       ) : null}
+      <form method="post" action={`/sites/${props.site.id}/pages/${props.page.id}/review`} class="inline" style="margin-bottom:12px">
+        <button class="btn secondary sm" type="submit">
+          Kiểm duyệt lại trang này (không viết lại)
+        </button>
+      </form>
       <form method="post" action={`/sites/${props.site.id}/pages/${props.page.id}`}>
         <label>Nội dung (JSON, sửa trực tiếp nếu cần)</label>
         <textarea name="content" style="min-height:360px;font-family:ui-monospace,Consolas,monospace;font-size:.82rem">

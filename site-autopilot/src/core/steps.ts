@@ -308,7 +308,7 @@ function cleanLinks(page: PageContent, validPaths: string[]): PageContent {
 const LIGHT_KINDS = new Set<PageContent['kind']>(['privacy', 'blog']);
 
 /** Cổng kiểm duyệt: kiểm tra bằng code, rồi AI duyệt (trừ trang nhẹ). Trả về danh sách lỗi gộp. */
-async function reviewContent(ctx: StepContext, page: PageContent): Promise<{ issues: QualityIssue[]; summary?: string }> {
+export async function reviewContent(ctx: StepContext, page: PageContent): Promise<{ issues: QualityIssue[]; summary?: string }> {
   const site = ctx.site;
   const issues = checkQuality(page);
   if (LIGHT_KINDS.has(page.kind) || !site.plan) return { issues };
