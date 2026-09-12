@@ -81,7 +81,9 @@ Chạy lại script này khi muốn đổi thông tin server.
 
 ## Bước 5. Mở dashboard (trên máy Windows)
 
-Cách đơn giản và an toàn nhất là SSH tunnel, không cần subdomain hay SSL. Mở PowerShell:
+Cách nhanh nhất: trong thư mục dự án, nhấp đúp **MO-DASHBOARD.cmd**. File này tự mở đường hầm SSH tới VPS (cửa sổ đen hiện ra, giữ nguyên đừng đóng) rồi mở trình duyệt vào http://localhost:3000. Lần đầu nên chạy **CAI-KHOA-SSH.cmd** một lần (nhập mật khẩu root lần cuối) để từ đó không phải gõ mật khẩu nữa. Khi có bản mới trên GitHub, nhấp **CAP-NHAT-VPS.cmd**.
+
+Cách thủ công tương đương, mở PowerShell:
 
 ```bash
 ssh -L 3000:127.0.0.1:3000 root@IP_VPS

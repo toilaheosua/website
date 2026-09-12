@@ -58,6 +58,8 @@ Bước nào lỗi sẽ hiện màu đỏ với nguyên nhân. Bấm "Chạy l�
 
 ## 5. Quản lý hàng ngày
 
+- **Ba nút trong thư mục dự án (Windows)**: `MO-DASHBOARD.cmd` mở đường hầm SSH tới VPS và mở dashboard; `CAI-KHOA-SSH.cmd` cài khóa SSH một lần để hết hỏi mật khẩu; `CAP-NHAT-VPS.cmd` kéo bản mới từ GitHub và cài lại trên VPS. IP VPS ghi ở đầu mỗi file, đổi nếu chuyển server.
+
 - **Kho ảnh thật**: trang site → Kho ảnh thật → tải ảnh của bạn lên (nhiều ảnh, gắn tag như `mat-tien`, `mon`, `khong-gian`, slug dịch vụ) hoặc "Nhập từ Google Maps" bằng link share.google, link Maps, Place ID hay tên quán (cần Google Maps Platform API key có bật Places API New). Mặc định chỉ lấy ảnh do chính doanh nghiệp đăng; ảnh của khách thuộc bản quyền của họ nên chỉ lấy khi bạn tick và đã xin phép. Bấm "Áp dụng ảnh vào website và dựng lại" để thay toàn bộ ảnh stock. Bỏ tick "Dùng ảnh stock Pexels" trong brief nếu muốn site không bao giờ dùng ảnh stock.
 - **Chỉnh sửa trực quan**: trang site → Chỉnh sửa trực quan → chọn trang cần sửa. Trang hiện đúng như website thật; nhấp vào tiêu đề, nút, câu hỏi để gõ lại tại chỗ (Enter để xong, Esc để hủy), nhấp vào đoạn văn để sửa markdown trong bảng bên phải rồi "Áp dụng", nhấp vào ảnh để chọn ảnh trong kho, tải ảnh mới hoặc bỏ ảnh. Nút "Tiêu đề & mô tả SEO" sửa thẻ title và meta description. Bấm "Lưu và dựng lại" là nội dung được lưu, website dựng lại và đưa lên host ngay. Ảnh chọn tay được giữ nguyên khi hệ thống gán lại ảnh hàng loạt.
 - **Viết thêm bài blog**: trong trang site, nhập chủ đề (hoặc để trống cho AI đề xuất) → Viết. Bài mới được dựng, deploy và gửi IndexNow.
