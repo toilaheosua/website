@@ -3,6 +3,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 import type { AapanelClient, CfDnsRecord, CfRule, CfZone, CloudflareClient, ContentGenerator, GoogleClient, ImageProvider, IndexNowClient, PanelSite, ServerConn, SshClient, StockPhoto } from './types.js';
 import { listLocalFiles, planUpload } from './deploy-diff.js';
+import type { EntitySuggestion, InterviewData } from '../core/interview.js';
 import type { EntityData, PageContent, SiteBrief, SitePlan } from '../core/types.js';
 import { randomHex, slugify } from '../core/util.js';
 
@@ -241,6 +242,38 @@ export class MockContentGenerator implements ContentGenerator {
     return bad
       ? { pass: false, summary: 'Bản mock bị đánh dấu không đạt để thử cổng kiểm duyệt.', issues: [{ severity: 'major', where: 'intro', problem: 'Có đánh dấu MOCK_BAD', fix: 'Bỏ đánh dấu' }] }
       : { pass: true, summary: 'Nội dung rõ ràng, đúng nhu cầu, không có dữ kiện ngoài brief.', issues: [] };
+  }
+
+  /** Rút Entity từ Bộ Câu Hỏi bằng vài quy tắc đơn giản (đủ để thử luồng, không gọi AI). */
+  async extractEntityFromInterview(input: { brief: SiteBrief; entity: EntityData; interview: InterviewData }): Promise<EntitySuggestion> {
+    this.stats.calls++;
+    const a = input.interview.answers;
+    const t = (id: string) => (a[id] ?? '').trim();
+    const all = Object.values(a).join('\n');
+    return {
+      legalName: (t('q1').split(/[;\n]/)[0] ?? '').trim(),
+      alternateName: [],
+      description: t('q3'),
+      foundingDate: all.match(/\b(19|20)\d{2}\b/)?.[0] ?? '',
+      founder: '',
+      telephone: t('q29').match(/0\d[\d .]{7,11}/)?.[0]?.trim() ?? '',
+      email: all.match(/[\w.+-]+@[\w-]+\.[\w.]+/)?.[0] ?? '',
+      streetAddress: (t('q28').split(/[;\n]/)[0] ?? '').trim(),
+      addressLocality: '',
+      addressRegion: '',
+      openingHours: [],
+      priceRange: '',
+      areaServed: [],
+      facebook: all.match(/https?:\/\/(?:www\.)?facebook\.com\/\S+/)?.[0] ?? '',
+      zalo: '',
+      youtube: '',
+      tiktok: '',
+      instagram: '',
+      googleMaps: all.match(/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps)\S*/)?.[0] ?? '',
+      authorName: '',
+      authorJobTitle: '',
+      authorBio: '',
+    };
   }
 
   async suggestPostTopics(input: { brief: SiteBrief; existingTitles: string[]; count: number }): Promise<SitePlan['posts']> {

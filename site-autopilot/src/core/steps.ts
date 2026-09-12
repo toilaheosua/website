@@ -246,7 +246,7 @@ const genPlan: StepDef = {
     if (Object.keys(patch).length) ctx.updateSite(patch);
     if (ctx.site.plan) return { status: 'done', message: 'Đã có kế hoạch, giữ nguyên' };
     const contentStyle = resolveContentStyle(ctx.site.brief, ctx.db.getGeneralSettings().defaultContentStyle);
-    const generated = await ctx.services.content.generatePlan({ brief: ctx.site.brief, entity: ctx.site.entity, domain: ctx.site.domain, contentStyle });
+    const generated = await ctx.services.content.generatePlan({ brief: ctx.site.brief, entity: ctx.site.entity, domain: ctx.site.domain, contentStyle, interview: ctx.site.interview });
     const plan = { ...generated, contentStyle };
     ctx.updateSite({ plan });
     return { status: 'done', message: `Kiểu viết ${CONTENT_STYLES[contentStyle].name}; ${plan.services.length} dịch vụ/chủ đề, ${plan.posts.length} bài viết, theme ${ctx.site.theme?.name ?? ''}`, output: { tagline: plan.tagline, contentStyle } };
@@ -313,7 +313,7 @@ export async function reviewContent(ctx: StepContext, page: PageContent): Promis
   const issues = checkQuality(page);
   if (LIGHT_KINDS.has(page.kind) || !site.plan) return { issues };
   try {
-    const ai = await ctx.services.content.reviewPage({ brief: site.brief, entity: site.entity, plan: site.plan, page });
+    const ai = await ctx.services.content.reviewPage({ brief: site.brief, entity: site.entity, plan: site.plan, page, interview: site.interview });
     for (const i of ai.issues) issues.push({ code: 'ai_review', severity: i.severity, where: i.where, message: `${i.problem} → ${i.fix}` });
     if (!ai.pass && !ai.issues.some((i) => i.severity === 'major')) issues.push({ code: 'ai_review', severity: 'major', where: 'page', message: ai.summary });
     return { issues, summary: ai.summary };
@@ -336,9 +336,9 @@ export async function generateAndSavePage(ctx: StepContext, req: RequiredPage, e
   const validPaths = internalLinks.map((l) => l.path.split('#')[0] as string);
   const label = req.slug || 'home';
   const finish = (p: PageContent) => autoFixPage(cleanLinks(p, validPaths));
-  const edit = (p: PageContent, feedback?: string[]) => ctx.services.content.editPage({ brief: site.brief, entity: site.entity, domain: site.domain, plan: site.plan as SitePlan, page: p, internalLinks, feedback });
+  const edit = (p: PageContent, feedback?: string[]) => ctx.services.content.editPage({ brief: site.brief, entity: site.entity, domain: site.domain, plan: site.plan as SitePlan, page: p, internalLinks, feedback, interview: site.interview });
 
-  const draft = await ctx.services.content.generatePage({ brief: site.brief, entity: site.entity, plan: site.plan, domain: site.domain, kind: req.kind, post: req.post, existingTitles, internalLinks });
+  const draft = await ctx.services.content.generatePage({ brief: site.brief, entity: site.entity, plan: site.plan, domain: site.domain, kind: req.kind, post: req.post, existingTitles, internalLinks, interview: site.interview });
   let page = finish(draft);
   let editFailed = false;
   if (!LIGHT_KINDS.has(req.kind)) {

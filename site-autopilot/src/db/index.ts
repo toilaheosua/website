@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { SCHEMA_SQL } from './schema.js';
 import { nowIso, safeJsonParse } from '../core/util.js';
 import type { ContentReview } from '../generator/quality.js';
+import type { InterviewData } from '../core/interview.js';
 import {
   EntitySchema,
   GeneralSettingsSchema,
@@ -65,13 +66,14 @@ export interface SiteRow {
   last_deployed_at: string | null;
   live_at: string | null;
   health: string | null;
+  interview: string | null;
   error_summary: string | null;
   created_at: string;
   updated_at: string;
 }
 
 /** Site đã giải mã JSON, dùng khắp nơi trong ứng dụng. */
-export interface Site extends Omit<SiteRow, 'brief' | 'entity' | 'plan' | 'theme' | 'cf_name_servers' | 'cf_ruleset_ids' | 'health'> {
+export interface Site extends Omit<SiteRow, 'brief' | 'entity' | 'plan' | 'theme' | 'cf_name_servers' | 'cf_ruleset_ids' | 'health' | 'interview'> {
   brief: SiteBrief;
   entity: EntityData;
   plan: SitePlan | null;
@@ -79,6 +81,8 @@ export interface Site extends Omit<SiteRow, 'brief' | 'entity' | 'plan' | 'theme
   cf_name_servers: string[];
   cf_ruleset_ids: { custom?: string; ratelimit?: string };
   health: HealthReport | null;
+  /** Bộ Câu Hỏi: câu trả lời của chủ doanh nghiệp */
+  interview: InterviewData | null;
 }
 
 export interface StepRow {
@@ -190,6 +194,8 @@ export class Db {
   private migrate(): void {
     const cols = (this.raw.prepare('PRAGMA table_info(site_pages)').all() as unknown as { name: string }[]).map((c) => c.name);
     if (!cols.includes('review')) this.raw.exec('ALTER TABLE site_pages ADD COLUMN review TEXT');
+    const siteCols = (this.raw.prepare('PRAGMA table_info(sites)').all() as unknown as { name: string }[]).map((c) => c.name);
+    if (!siteCols.includes('interview')) this.raw.exec('ALTER TABLE sites ADD COLUMN interview TEXT');
   }
 
   close(): void {
@@ -285,6 +291,7 @@ export class Db {
       cf_name_servers: safeJsonParse<string[]>(row.cf_name_servers, []),
       cf_ruleset_ids: safeJsonParse<{ custom?: string; ratelimit?: string }>(row.cf_ruleset_ids, {}),
       health: safeJsonParse<HealthReport | null>(row.health, null),
+      interview: safeJsonParse<InterviewData | null>(row.interview, null),
     };
   }
 
@@ -319,7 +326,7 @@ export class Db {
   updateSite(id: number, patch: Partial<Omit<Site, 'id' | 'created_at'>>): void {
     const cols: string[] = [];
     const vals: unknown[] = [];
-    const jsonFields = new Set(['brief', 'entity', 'plan', 'theme', 'cf_name_servers', 'cf_ruleset_ids', 'health']);
+    const jsonFields = new Set(['brief', 'entity', 'plan', 'theme', 'cf_name_servers', 'cf_ruleset_ids', 'health', 'interview']);
     for (const [k, v] of Object.entries(patch)) {
       if (v === undefined) continue;
       cols.push(`${k} = ?`);

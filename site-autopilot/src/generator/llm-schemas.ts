@@ -88,3 +88,30 @@ export const LlmReviewSchema = z.object({
   ),
 });
 export type LlmReview = z.infer<typeof LlmReviewSchema>;
+
+/** Gợi ý Entity rút từ Bộ Câu Hỏi: chuỗi rỗng hoặc mảng rỗng = không có thông tin. */
+export const LlmEntitySuggestSchema = z.object({
+  legalName: z.string(),
+  alternateName: z.array(z.string()),
+  description: z.string(),
+  foundingDate: z.string(),
+  founder: z.string(),
+  telephone: z.string(),
+  email: z.string(),
+  streetAddress: z.string(),
+  addressLocality: z.string(),
+  addressRegion: z.string(),
+  openingHours: z.array(z.string()),
+  priceRange: z.string(),
+  areaServed: z.array(z.string()),
+  facebook: z.string(),
+  zalo: z.string(),
+  youtube: z.string(),
+  tiktok: z.string(),
+  instagram: z.string(),
+  googleMaps: z.string(),
+  authorName: z.string(),
+  authorJobTitle: z.string(),
+  authorBio: z.string(),
+});
+export type LlmEntitySuggest = z.infer<typeof LlmEntitySuggestSchema>;

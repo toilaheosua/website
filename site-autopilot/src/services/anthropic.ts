@@ -3,7 +3,8 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import type { z } from 'zod';
 import type { ContentGenerator, InternalLink } from './types.js';
 import type { EntityData, PageContent, SiteBrief, SitePlan } from '../core/types.js';
-import { LlmPageSchema, LlmPlanSchema, LlmReviewSchema, LlmTopicsSchema, type LlmPage, type LlmPlan, type LlmReview } from '../generator/llm-schemas.js';
+import { LlmEntitySuggestSchema, LlmPageSchema, LlmPlanSchema, LlmReviewSchema, LlmTopicsSchema, type LlmEntitySuggest, type LlmPage, type LlmPlan, type LlmReview } from '../generator/llm-schemas.js';
+import { interviewBlock, type InterviewData } from '../core/interview.js';
 import { CONTENT_STYLES, contentStyleGuide, ENGAGEMENT_RULES, PAGE_STRUCTURES, resolveContentStyle, type ContentStyleId } from '../generator/content-styles.js';
 import { AppError, TransientError } from '../core/errors.js';
 import { createLogger } from '../core/logger.js';
@@ -59,7 +60,7 @@ Nguyên tắc chất lượng (bắt buộc, vì nội dung sẽ được Google
 8. Trả về đúng cấu trúc JSON được yêu cầu, mọi trường đều có giá trị; trường không dùng để chuỗi rỗng hoặc mảng rỗng.`;
 }
 
-function briefBlock(brief: SiteBrief, entity: EntityData, domain: string): string {
+function briefBlock(brief: SiteBrief, entity: EntityData, domain: string, interview?: InterviewData | null): string {
   const lines = [
     `Domain: ${domain}`,
     `Thương hiệu: ${brief.brandName}`,
@@ -84,7 +85,8 @@ function briefBlock(brief: SiteBrief, entity: EntityData, domain: string): strin
     entity.founder ? `Người sáng lập: ${entity.founder}` : '',
     entity.author.name ? `Tác giả nội dung: ${entity.author.name}${entity.author.jobTitle ? ', ' + entity.author.jobTitle : ''}` : '',
   ].filter(Boolean);
-  return lines.join('\n');
+  const facts = interviewBlock(interview);
+  return lines.join('\n') + (facts ? `\n\n${facts}` : '');
 }
 
 function linksBlock(links: InternalLink[] | undefined): string {
@@ -183,13 +185,13 @@ export class AnthropicContentGenerator implements ContentGenerator {
     }
   }
 
-  async generatePlan(input: { brief: SiteBrief; entity: EntityData; domain: string; contentStyle?: ContentStyleId }): Promise<SitePlan> {
+  async generatePlan(input: { brief: SiteBrief; entity: EntityData; domain: string; contentStyle?: ContentStyleId; interview?: InterviewData | null }): Promise<SitePlan> {
     const { brief, entity, domain } = input;
     const style = input.contentStyle ?? resolveContentStyle(brief);
     const servicesCount = brief.siteType === 'blog' ? '3 chủ đề trụ cột (đóng vai trò "dịch vụ" về mặt cấu trúc, đặt tên như chuyên mục)' : brief.services.length ? `đúng ${brief.services.length} dịch vụ theo brief, giữ đúng tên` : '4 đến 6 dịch vụ hợp lý với ngành';
     const user = `Lập kế hoạch nội dung cho website dưới đây, theo kiểu viết "${CONTENT_STYLES[style].name}". Trả về JSON.
 
-${briefBlock(brief, entity, domain)}
+${briefBlock(brief, entity, domain, input.interview)}
 
 Yêu cầu:
 - tagline: 6 đến 12 từ, nói rõ làm gì cho ai, không sáo rỗng.
@@ -205,7 +207,7 @@ Yêu cầu:
     return { ...planFromLlm(out), contentStyle: style };
   }
 
-  async generatePage(input: { brief: SiteBrief; entity: EntityData; plan: SitePlan; domain: string; kind: PageContent['kind']; post?: SitePlan['posts'][number]; existingTitles?: string[]; internalLinks?: InternalLink[] }): Promise<PageContent> {
+  async generatePage(input: { brief: SiteBrief; entity: EntityData; plan: SitePlan; domain: string; kind: PageContent['kind']; post?: SitePlan['posts'][number]; existingTitles?: string[]; internalLinks?: InternalLink[]; interview?: InterviewData | null }): Promise<PageContent> {
     const { brief, entity, plan, domain, kind, post } = input;
     const style = plan.contentStyle ?? resolveContentStyle(brief);
     const planBlock = [
@@ -224,7 +226,7 @@ Yêu cầu:
     const postBlock = post ? `\nBài viết cần viết:\n- Tiêu đề gợi ý: ${post.title}\n- Từ khóa mục tiêu: ${post.targetKeyword}\n- Góc nhìn: ${post.angle}\n- imageQuery gợi ý cho ảnh đầu bài: ${post.imageQuery}` : '';
     const user = `Viết nội dung cho một trang của website. Trả về JSON.
 
-${briefBlock(brief, entity, domain)}
+${briefBlock(brief, entity, domain, input.interview)}
 
 Kế hoạch nội dung đã chốt:
 ${planBlock}
@@ -248,10 +250,10 @@ Quy ước trường:
     return pageFromLlm(kind, out, post);
   }
 
-  async editPage(input: { brief: SiteBrief; entity?: EntityData; domain?: string; plan: SitePlan; page: PageContent; internalLinks?: InternalLink[]; feedback?: string[] }): Promise<PageContent> {
+  async editPage(input: { brief: SiteBrief; entity?: EntityData; domain?: string; plan: SitePlan; page: PageContent; internalLinks?: InternalLink[]; feedback?: string[]; interview?: InterviewData | null }): Promise<PageContent> {
     const { brief, plan, page } = input;
     const style = plan.contentStyle ?? resolveContentStyle(brief);
-    const background = input.entity ? briefBlock(brief, input.entity, input.domain ?? '') : `Thương hiệu: ${brief.brandName}, ngành: ${brief.industry}${brief.location ? ', khu vực: ' + brief.location : ''}`;
+    const background = input.entity ? briefBlock(brief, input.entity, input.domain ?? '', input.interview) : `Thương hiệu: ${brief.brandName}, ngành: ${brief.industry}${brief.location ? ', khu vực: ' + brief.location : ''}`;
     const feedback = input.feedback?.length ? `\nCỔNG KIỂM DUYỆT ĐÃ TỪ CHỐI BẢN NÀY. Bắt buộc sửa hết các lỗi sau (mục BẮT BUỘC), sửa thêm mục "nên" nếu được:\n${input.feedback.map((x) => '- ' + x).join('\n')}\n` : '';
     const user = `${EDITOR_CHECKLIST}
 ${feedback}
@@ -270,7 +272,7 @@ ${JSON.stringify(toLlmPage(page))}`;
     return { ...page, ...edited, kind: page.kind, publishedAt: page.publishedAt };
   }
 
-  async reviewPage(input: { brief: SiteBrief; entity: EntityData; plan: SitePlan; page: PageContent }): Promise<LlmReview> {
+  async reviewPage(input: { brief: SiteBrief; entity: EntityData; plan: SitePlan; page: PageContent; interview?: InterviewData | null }): Promise<LlmReview> {
     const { brief, entity, plan, page } = input;
     const style = plan.contentStyle ?? resolveContentStyle(brief);
     const system = `Bạn là trưởng ban biên tập khó tính, duyệt nội dung website trước khi xuất bản. Bạn không sửa bài, chỉ chấm đạt hay không đạt và chỉ ra lỗi cụ thể. Trả lời bằng ${languageName(brief.language)}.`;
@@ -286,7 +288,7 @@ Tiêu chí minor: câu dài khó đọc, heading chung chung, khối callout/b�
 Không bắt lỗi về độ dài nếu bài đã trả lời trọn nhu cầu.
 
 Thông tin nền (toàn bộ dữ kiện được phép):
-${briefBlock(brief, entity, '')}
+${briefBlock(brief, entity, '', input.interview)}
 - Kiểu viết: ${CONTENT_STYLES[style].name}
 - Điểm khác biệt đã chốt: ${plan.differentiators.join('; ')}
 ${page.targetKeyword ? '- Từ khóa mục tiêu: ' + page.targetKeyword : ''}
@@ -294,6 +296,27 @@ ${page.targetKeyword ? '- Từ khóa mục tiêu: ' + page.targetKeyword : ''}
 Nội dung (JSON):
 ${JSON.stringify(toLlmPage(page))}`;
     return this.structured({ model: this.editorModel, system, user, schema: LlmReviewSchema, maxTokens: 4000 });
+  }
+
+  async extractEntityFromInterview(input: { brief: SiteBrief; entity: EntityData; interview: InterviewData }): Promise<LlmEntitySuggest> {
+    const system = 'Bạn là chuyên viên dữ liệu có cấu trúc (schema.org). Bạn rút thông tin thực thể doanh nghiệp từ câu trả lời phỏng vấn, tuyệt đối không suy đoán, không thêm gì không có trong câu trả lời. Trả về JSON đúng cấu trúc.';
+    const user = `Từ các câu trả lời dưới đây, rút ra thông tin cho Entity SEO. Quy tắc:
+- Trường nào không có thông tin rõ ràng thì để chuỗi rỗng hoặc mảng rỗng.
+- legalName: tên pháp lý đầy đủ; alternateName: các tên gọi khác (không lặp tên chính "${input.brief.brandName}").
+- description: 1 đến 2 câu, viết lại gọn từ câu trả lời, không thêm tính từ quảng cáo.
+- foundingDate: năm hoặc ngày dạng YYYY hoặc YYYY-MM-DD.
+- telephone: đúng số như trong câu trả lời; email: đúng địa chỉ.
+- streetAddress: số nhà và đường; addressLocality: thành phố/quận; addressRegion: tỉnh.
+- openingHours: định dạng schema.org, ví dụ "Mo-Su 05:30-12:00", "Mo-Fr 08:00-17:00"; nghỉ ngày nào thì bỏ ngày đó.
+- priceRange: chỉ khi chủ doanh nghiệp cho phép công bố, dạng "40.000đ - 50.000đ"; nếu ghi "không công bố" thì để rỗng.
+- areaServed: các khu vực phục vụ/giao hàng.
+- facebook, zalo, youtube, tiktok, instagram, googleMaps: URL đầy đủ nếu có.
+- authorName/authorJobTitle/authorBio: người đại diện phát ngôn hoặc phụ trách nội dung nếu được nêu.
+
+Thương hiệu: ${input.brief.brandName}; ngành: ${input.brief.industry}
+
+${interviewBlock(input.interview, 20_000)}`;
+    return this.structured({ model: this.editorModel, system, user, schema: LlmEntitySuggestSchema, maxTokens: 4000 });
   }
 
   async suggestPostTopics(input: { brief: SiteBrief; plan: SitePlan; existingTitles: string[]; count: number }): Promise<SitePlan['posts']> {

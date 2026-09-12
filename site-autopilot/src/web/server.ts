@@ -21,10 +21,11 @@ import { brandReplacementPairs, replaceTextInSite } from '../core/rename.js';
 import type { IntegrationView } from './views.js';
 import { adminUserName, checkPassword, hasAdminCredential, isAuthenticated, login, logout, passwordSource, requireAuth, sameOriginGuard, setAdminPassword, validateNewPassword } from './auth.js';
 import { LoginPage, Page, SetupPage, type Flash } from './layout.js';
-import { EditBriefForm, EntityForm, JobsPage, LibraryPage, LogsPage, NewSiteForm, PageDetail, PagesList, SettingsPage, SiteDetail, SitesIndex } from './views.js';
+import { EditBriefForm, EntityForm, InterviewPage, JobsPage, LibraryPage, LogsPage, NewSiteForm, PageDetail, PagesList, SettingsPage, SiteDetail, SitesIndex } from './views.js';
 import { deleteLibraryFile, saveLibraryImage } from '../generator/library.js';
 import { parseList } from '../core/util.js';
 import { mountEditor } from './editor.js';
+import { INTERVIEW_QUESTIONS, answeredCount } from '../core/interview.js';
 import { file, parseBriefEdit, parseEntity, parseGeneral, parseNewSite, parseWaf, str, type FormBody } from './forms.js';
 
 export interface WebDeps {
@@ -372,6 +373,39 @@ export function createApp(deps: WebDeps): Hono {
       flash(c, { type: 'ok', text: 'Đã lưu Entity. Site sẽ dùng dữ liệu này ở lần dựng tiếp theo.' });
     }
     return c.redirect(`/sites/${site.id}/entity`);
+  });
+
+  /* ---------------- bộ câu hỏi ---------------- */
+  app.get('/sites/:id/interview', (c) => {
+    const site = siteOr404(c);
+    if (!site) return c.notFound();
+    return render(c, `Bộ Câu Hỏi ${site.domain}`, 'sites', InterviewPage({ site, interview: site.interview }));
+  });
+  app.post('/sites/:id/interview', async (c) => {
+    const site = siteOr404(c);
+    if (!site) return c.notFound();
+    const body = (await c.req.parseBody()) as FormBody;
+    const answers: Record<string, string> = {};
+    for (const q of INTERVIEW_QUESTIONS) {
+      const v = str(body, `a_${q.id}`).trim();
+      if (v) answers[q.id] = v.slice(0, 4000);
+    }
+    const interview = { answers, updated_at: new Date().toISOString() };
+    db.updateSite(site.id, { interview });
+    const n = answeredCount(interview);
+    db.addLog({ site_id: site.id, step: 'interview', level: 'info', message: `Cập nhật Bộ Câu Hỏi: ${n}/${INTERVIEW_QUESTIONS.length} câu đã trả lời` });
+    const action = str(body, 'action');
+    if (action === 'apply' || action === 'apply_overwrite') {
+      if (n === 0) {
+        flash(c, { type: 'err', text: 'Chưa có câu trả lời nào để đưa vào Entity.' });
+        return c.redirect(`/sites/${site.id}/interview`);
+      }
+      db.enqueueJob('apply_interview', site.id, { overwrite: action === 'apply_overwrite' }, { dedupe: true, maxAttempts: 2 });
+      flash(c, { type: 'ok', text: `Đã lưu ${n} câu trả lời. Đang rút thông tin vào Entity bằng AI, xem kết quả ở tab Entity SEO sau khoảng một phút (log ghi rõ trường nào được cập nhật).` });
+      return c.redirect(`/sites/${site.id}/entity`);
+    }
+    flash(c, { type: 'ok', text: `Đã lưu ${n}/${INTERVIEW_QUESTIONS.length} câu trả lời. Bài viết mới và trang sinh lại sẽ dùng các dữ kiện này.` });
+    return c.redirect(`/sites/${site.id}/interview`);
   });
 
   /* ---------------- pages ---------------- */

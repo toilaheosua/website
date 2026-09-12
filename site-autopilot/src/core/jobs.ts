@@ -8,6 +8,7 @@ import { AppError } from './errors.js';
 import { errorMessage, safeJsonParse, slugify } from './util.js';
 import { applyRateLimit, applyWafRules, generateAndSavePage, refreshSiteImages, requiredPages, reviewContent, runBuild, runDeploy, submitIndexNow, type RequiredPage } from './steps.js';
 import { isPass, type ContentReview } from '../generator/quality.js';
+import { answeredCount, mergeEntitySuggestion } from './interview.js';
 import { siteDirs } from '../generator/builder.js';
 import { saveLibraryImage } from '../generator/library.js';
 import { checkSiteHealth } from '../monitor/health.js';
@@ -71,6 +72,29 @@ const handlers: Record<string, Handler> = {
     }
     ctx.log('info', `Kiểm duyệt lại ${pages.length} trang: ${passed} đạt, ${failed} chưa đạt`);
     return { pages: pages.length, passed, failed };
+  },
+
+  /**
+   * Rút thông tin từ Bộ Câu Hỏi vào Entity SEO bằng AI: chỉ điền trường đang trống
+   * (payload.overwrite = true thì ghi đè), rồi dựng lại để JSON-LD cập nhật.
+   */
+  async apply_interview(env, payload) {
+    const ctx = siteCtx(env, 'apply_interview');
+    const interview = ctx.site.interview;
+    if (!interview || answeredCount(interview) === 0) throw new AppError('Bộ Câu Hỏi chưa có câu trả lời nào');
+    const suggestion = await ctx.services.content.extractEntityFromInterview({ brief: ctx.site.brief, entity: ctx.site.entity, interview });
+    const { entity, changed } = mergeEntitySuggestion(ctx.site.entity, suggestion, Boolean(payload.overwrite));
+    if (!changed.length) {
+      ctx.log('info', 'Bộ Câu Hỏi: không có trường Entity nào cần cập nhật (các trường có thông tin đều đã điền)');
+      return { changed: [] };
+    }
+    ctx.updateSite({ entity });
+    ctx.log('info', `Bộ Câu Hỏi → Entity: cập nhật ${changed.length} trường: ${changed.join(', ')}`);
+    if (ctx.site.plan && ctx.site.site_path) {
+      await runBuild(ctx);
+      await runDeploy(ctx);
+    }
+    return { changed };
   },
 
   async health_check(env) {
@@ -274,6 +298,7 @@ export async function runJob(env: JobEnv): Promise<unknown> {
 export const JOB_LABELS: Record<string, string> = {
   rebuild_deploy: 'Dựng lại và đưa lên host',
   review_pages: 'Kiểm duyệt lại nội dung',
+  apply_interview: 'Cập nhật Entity từ Bộ Câu Hỏi',
   health_check: 'Kiểm tra sức khỏe',
   generate_post: 'Viết bài blog mới',
   regenerate_page: 'Sinh lại trang',

@@ -10,6 +10,7 @@ import { CONTENT_STYLE_CHOICES } from '../generator/content-styles.js';
 import { mdToHtml } from '../generator/markdown.js';
 import { validateEntity } from '../generator/schema.js';
 import { JOB_LABELS } from '../core/jobs.js';
+import { INTERVIEW_GROUPS, INTERVIEW_QUESTIONS, answeredCount, type InterviewData } from '../core/interview.js';
 import { Badge, STATUS_LABEL } from './layout.js';
 
 /* ------------------------------------------------------------------ */
@@ -997,6 +998,67 @@ export function LibraryPage(props: { site: Site; library: LibraryRow[]; usedFile
 /*  Entity                                                              */
 /* ------------------------------------------------------------------ */
 
+function EntityTabs(props: { site: Site; active: 'entity' | 'interview' }) {
+  const n = answeredCount(props.site.interview);
+  return (
+    <div class="tabs">
+      <a href={`/sites/${props.site.id}/entity`} class={props.active === 'entity' ? 'active' : ''}>
+        Entity SEO
+      </a>
+      <a href={`/sites/${props.site.id}/interview`} class={props.active === 'interview' ? 'active' : ''}>
+        Bộ Câu Hỏi ({n}/{INTERVIEW_QUESTIONS.length})
+      </a>
+    </div>
+  );
+}
+
+/** Bộ Câu Hỏi: 30 câu phỏng vấn chủ doanh nghiệp, câu trả lời là dữ kiện thật cho Entity và nội dung. */
+export function InterviewPage(props: { site: Site; interview: InterviewData | null }) {
+  const { site } = props;
+  const answers = props.interview?.answers ?? {};
+  const n = answeredCount(props.interview);
+  return (
+    <div class="card">
+      <EntityTabs site={site} active="interview" />
+      <h1>Bộ Câu Hỏi: {site.domain}</h1>
+      <p class="muted">
+        30 câu hỏi phủ đủ khía cạnh của doanh nghiệp. Trả lời bằng lời của bạn, càng cụ thể càng tốt, không cần đủ hết. Câu trả lời được dùng làm dữ kiện thật khi lập kế hoạch, viết, biên tập và kiểm duyệt nội dung (AI không được khẳng định điều gì ngoài dữ kiện này), và có thể đưa vào Entity SEO bằng một nút bấm.
+      </p>
+      <div class="alert info">
+        Đã trả lời <b>{n}/{INTERVIEW_QUESTIONS.length}</b> câu{props.interview?.updated_at ? `, cập nhật ${formatDateVi(props.interview.updated_at)}` : ''}. Nên trả lời tối thiểu các câu 1, 3, 4, 5, 10, 15, 19, 28, 29, 30 để có tác dụng rõ.
+      </div>
+      <form method="post" action={`/sites/${site.id}/interview`}>
+        {INTERVIEW_GROUPS.map((g) => (
+          <fieldset>
+            <legend>{g}</legend>
+            {INTERVIEW_QUESTIONS.filter((q) => q.group === g).map((q) => (
+              <div style="margin-bottom:12px">
+                <label>
+                  {q.id.replace('q', '')}. {q.text}
+                </label>
+                <textarea name={`a_${q.id}`} placeholder={q.hint} style="min-height:64px">
+                  {answers[q.id] ?? ''}
+                </textarea>
+              </div>
+            ))}
+          </fieldset>
+        ))}
+        <div class="actions" style="margin-top:12px;position:sticky;bottom:0;background:#fff;padding:10px 0;border-top:1px solid var(--line)">
+          <button class="btn" type="submit" name="action" value="save">
+            Lưu câu trả lời
+          </button>
+          <button class="btn secondary" type="submit" name="action" value="apply">
+            Lưu và cập nhật Entity bằng AI (chỉ điền ô trống)
+          </button>
+          <button class="btn secondary" type="submit" name="action" value="apply_overwrite" onclick="return confirm('Ghi đè các trường Entity đã có bằng thông tin rút từ câu trả lời?')">
+            Lưu và ghi đè Entity
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export function EntityForm(props: { site: Site; entity: EntityData; warnings: string[]; autoSync: boolean }) {
   const e = props.entity;
   const { site } = props;
@@ -1010,6 +1072,7 @@ export function EntityForm(props: { site: Site; entity: EntityData; warnings: st
   );
   return (
     <div class="card">
+      <EntityTabs site={site} active="entity" />
       <h1>Entity SEO: {site.domain}</h1>
       <p class="muted">
         Dữ liệu này sinh ra JSON-LD (Organization/LocalBusiness, WebSite, Person, BreadcrumbList, BlogPosting, FAQPage), thẻ Open Graph, mã theo dõi và thẻ xác minh. Lưu là website được dựng lại và đưa lên host{props.autoSync ? ' ngay lập tức' : ''}.
