@@ -21,12 +21,13 @@ import { brandReplacementPairs, replaceTextInSite } from '../core/rename.js';
 import type { IntegrationView } from './views.js';
 import { adminUserName, checkPassword, hasAdminCredential, isAuthenticated, login, logout, passwordSource, requireAuth, sameOriginGuard, setAdminPassword, validateNewPassword } from './auth.js';
 import { LoginPage, Page, SetupPage, type Flash } from './layout.js';
-import { EditBriefForm, EntityForm, InterviewPage, JobsPage, PostForm, LibraryPage, LogsPage, NewSiteForm, PageDetail, PagesList, SettingsPage, SiteDetail, SitesIndex } from './views.js';
+import { EditBriefForm, EntityForm, ImportPostPage, InterviewPage, JobsPage, PostForm, LibraryPage, LogsPage, NewSiteForm, PageDetail, PagesList, SettingsPage, SiteDetail, SitesIndex } from './views.js';
 import { deleteLibraryFile, saveLibraryImage } from '../generator/library.js';
 import { parseList } from '../core/util.js';
 import { mountEditor } from './editor.js';
 import { INTERVIEW_QUESTIONS, answeredCount } from '../core/interview.js';
 import { buildManualPost, invalidImageRefs, postSlug, postToForm, type ManualPostInput } from '../core/manual-post.js';
+import { parseImportedPost, rewriteImageRefs, unpackUpload } from '../core/import-post.js';
 import { autoFixPage, checkQuality, isPass } from '../generator/quality.js';
 import { ROUTES } from '../generator/render-context.js';
 import { file, parseBriefEdit, parseEntity, parseGeneral, parseNewSite, parseWaf, str, type FormBody } from './forms.js';
@@ -527,10 +528,56 @@ export function createApp(deps: WebDeps): Hono {
     const id = db.upsertPage({ site_id: site.id, kind: 'post', slug, title: content.title, content, sort_order: 10 + posts, status: 'published', review: manualReview(content) });
     const short = slug.slice(blog.length + 1);
     if (!site.plan.posts.some((p) => p.slug === short)) db.updateSite(site.id, { plan: { ...site.plan, posts: [...site.plan.posts, { title: content.title, slug: short, targetKeyword: content.targetKeyword ?? '', angle: 'Bài viết thủ công', imageQuery: '' }] } });
+    const heroId = Number.parseInt(str(body, 'heroLibraryId'), 10);
+    const heroLib = Number.isFinite(heroId) ? db.getLibraryImage(heroId) : undefined;
+    if (heroLib && heroLib.site_id === site.id) db.upsertImage({ site_id: site.id, key: `post.${short}.hero`, provider: 'manual', provider_id: String(heroLib.id), query: null, file: heroLib.file, width: heroLib.width, height: heroLib.height, alt: content.heroImageAlt || heroLib.alt, credit: heroLib.credit, credit_url: '' });
     db.addLog({ site_id: site.id, step: 'manual_post', level: 'info', message: `Viết bài thủ công "${content.title}" (/${slug}/)` });
     if (site.site_path) db.scheduleRebuild(site.id, config.REBUILD_DEBOUNCE_SEC);
     flash(c, { type: 'ok', text: `Đã đăng bài "${content.title}", đang dựng lại và đưa lên host. Vào Chỉnh sửa trực quan để chọn ảnh đầu bài.` });
     return c.redirect(`/sites/${site.id}/pages/${id}`);
+  });
+  app.get('/sites/:id/posts/import', (c) => {
+    const site = siteOr404(c);
+    if (!site) return c.notFound();
+    return render(c, `Nhập bài ${site.domain}`, 'sites', ImportPostPage({ site }));
+  });
+  app.post('/sites/:id/posts/import', async (c) => {
+    const site = siteOr404(c);
+    if (!site) return c.notFound();
+    if (!site.plan) {
+      flash(c, { type: 'err', text: 'Site chưa có kế hoạch nội dung, chờ bước Lập kế hoạch xong rồi nhập bài.' });
+      return c.redirect(`/sites/${site.id}/pages`);
+    }
+    const body = await c.req.parseBody();
+    const upload = body.file;
+    if (!(upload instanceof File) || upload.size === 0) return render(c, `Nhập bài ${site.domain}`, 'sites', ImportPostPage({ site, error: 'Chưa chọn file.' }));
+    if (upload.size > 60 * 1024 * 1024) return render(c, `Nhập bài ${site.domain}`, 'sites', ImportPostPage({ site, error: 'File quá 60 MB.' }));
+    try {
+      const entries = unpackUpload(upload.name, Buffer.from(await upload.arrayBuffer()));
+      const parsed = parseImportedPost(entries);
+      const dirs = siteDirs(config.sitesDir, site.domain);
+      const mapping = new Map<string, string>();
+      let heroLibraryId: number | undefined;
+      let saved = 0;
+      for (const img of parsed.images) {
+        try {
+          const lib = await saveLibraryImage({ db, siteId: site.id, cacheDir: dirs.images, buffer: img.data, alt: img.alt, tags: ['nhap-bai'], source: 'upload', nameHint: path.parse(img.fileName).name });
+          mapping.set(img.ref, `/assets/img/${path.basename(lib.file)}`);
+          if (heroLibraryId === undefined) heroLibraryId = lib.id;
+          saved++;
+        } catch (err) {
+          parsed.notes.push(`Không đọc được ảnh ${img.fileName}: ${errorMessage(err)}`);
+        }
+      }
+      const values = { ...parsed.values, body: rewriteImageRefs(parsed.values.body, mapping, parsed.missingImages) };
+      const notes = [...parsed.notes, `Đã đưa ${saved} ảnh vào Kho ảnh thật (tag nhap-bai)${parsed.missingImages.length ? `; đã bỏ ${parsed.missingImages.length} ảnh không có trong gói: ${parsed.missingImages.slice(0, 4).join(', ')}` : ''}`];
+      const useHero = String(body.firstAsHero ?? '') === '1';
+      if (useHero && heroLibraryId) notes.push('Ảnh đầu tiên sẽ được dùng làm ảnh đầu bài, đổi sau trong Chỉnh sửa trực quan nếu muốn');
+      db.addLog({ site_id: site.id, step: 'manual_post', level: 'info', message: `Nhập bài từ file ${upload.name}: "${values.title}", ${saved} ảnh` });
+      return render(c, `Viết bài ${site.domain}`, 'sites', PostForm({ site, values, library: db.listLibrary(site.id), notice: notes, heroLibraryId: useHero ? heroLibraryId : undefined }));
+    } catch (err) {
+      return render(c, `Nhập bài ${site.domain}`, 'sites', ImportPostPage({ site, error: `Không nhập được: ${errorMessage(err)}` }));
+    }
   });
   app.get('/sites/:id/pages/:pageId/edit', (c) => {
     const site = siteOr404(c);

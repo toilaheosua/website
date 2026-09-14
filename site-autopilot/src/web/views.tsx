@@ -741,6 +741,9 @@ export function PagesList(props: { site: Site; pages: PageRow[] }) {
         <a class="btn sm" href={`/sites/${props.site.id}/posts/new`}>
           + Viết bài thủ công
         </a>
+        <a class="btn sm" href={`/sites/${props.site.id}/posts/import`} style="background:#0891b2;border-color:#0891b2">
+          ⇪ Nhập bài từ file
+        </a>
         <form method="post" action={`/sites/${props.site.id}/pages/review`} class="inline">
           <button class="btn secondary sm" type="submit">
             Kiểm duyệt lại tất cả (không viết lại)
@@ -815,7 +818,36 @@ export function PagesList(props: { site: Site; pages: PageRow[] }) {
 }
 
 /** Soạn bài viết thủ công (tạo mới hoặc sửa): markdown một ô, "## " là mục mới. */
-export function PostForm(props: { site: Site; pageId?: number; values: ManualPostInput; errors?: string[]; library: LibraryRow[] }) {
+/** Trang nhập bài từ file: ZIP (bài + ảnh) hoặc .md / .json / .txt. */
+export function ImportPostPage(props: { site: Site; error?: string }) {
+  const { site } = props;
+  return (
+    <div class="card">
+      <p>
+        <a href={`/sites/${site.id}/pages`}>← Quay lại</a>
+      </p>
+      <h1>Nhập bài từ file: {site.domain}</h1>
+      <p class="muted">
+        Chọn file ZIP xuất từ công cụ soạn bài (gồm bài .md hoặc .json và thư mục ảnh), hoặc một file .md / .json / .txt. Hệ thống nhận diện tiêu đề, meta, từ khóa, các mục, câu hỏi thường gặp, tóm tắt nhanh và ảnh trong bài; ảnh được đưa vào Kho ảnh thật và gắn đúng vị trí. Sau đó bạn xem lại trong form soạn bài rồi bấm Đăng.
+      </p>
+      {props.error ? <div class="alert err">{props.error}</div> : null}
+      <form method="post" action={`/sites/${site.id}/posts/import`} enctype="multipart/form-data">
+        <label>File bài viết (.zip, .md, .json, .txt; tối đa 60 MB)</label>
+        <input type="file" name="file" accept=".zip,.md,.markdown,.json,.txt,application/zip" required />
+        <label style="margin-top:10px">
+          <input type="checkbox" name="firstAsHero" value="1" checked /> Lấy ảnh đầu tiên trong bài làm ảnh đầu bài (hero)
+        </label>
+        <div class="actions" style="margin-top:12px">
+          <button class="btn" type="submit">
+            Tải lên và nhận diện
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+export function PostForm(props: { site: Site; pageId?: number; values: ManualPostInput; errors?: string[]; library: LibraryRow[]; notice?: string[]; heroLibraryId?: number }) {
   const { site } = props;
   const v = props.values;
   const action = props.pageId ? `/sites/${site.id}/pages/${props.pageId}/edit` : `/sites/${site.id}/posts/new`;
@@ -826,6 +858,16 @@ export function PostForm(props: { site: Site; pageId?: number; values: ManualPos
       </p>
       <h1>{props.pageId ? 'Soạn thảo bài viết' : 'Viết bài thủ công'}: {site.domain}</h1>
       <p class="muted">Bài do bạn tự viết được đăng ngay, không qua AI viết lại. Cổng kiểm duyệt vẫn chấm và ghi góp ý để bạn tham khảo, không giữ bài lại.</p>
+      {props.notice?.length ? (
+        <div class="alert ok">
+          <b>Đã nhận diện bài từ file.</b> Kiểm tra lại rồi bấm Đăng ở cuối trang.
+          <ul style="margin:6px 0 0;padding-left:18px">
+            {props.notice.map((n) => (
+              <li>{n}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {props.errors?.length ? (
         <div class="alert err">
           <ul style="margin:0;padding-left:18px">
@@ -836,6 +878,7 @@ export function PostForm(props: { site: Site; pageId?: number; values: ManualPos
         </div>
       ) : null}
       <form method="post" action={action}>
+        {props.heroLibraryId ? <input type="hidden" name="heroLibraryId" value={String(props.heroLibraryId)} /> : null}
         <div class="row">
           <div>
             <label>
