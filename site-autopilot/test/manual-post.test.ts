@@ -10,7 +10,10 @@ import { Worker } from '../src/core/worker.js';
 import { EntitySchema, SiteBriefSchema } from '../src/core/types.js';
 import { MockCloudflare } from '../src/services/mock.js';
 import { createApp } from '../src/web/server.js';
-import { buildManualPost, markdownToSections, parseFaq, postSlug, postToForm, sectionsToMarkdown } from '../src/core/manual-post.js';
+import { buildManualPost, findImageRefs, invalidImageRefs, markdownToSections, parseFaq, postSlug, postToForm, sectionsToMarkdown } from '../src/core/manual-post.js';
+import { saveLibraryImage } from '../src/generator/library.js';
+import { siteDirs } from '../src/generator/builder.js';
+import sharp from 'sharp';
 
 let tmp: string;
 beforeAll(() => {
@@ -41,6 +44,13 @@ describe('soạn bài thủ công', () => {
     expect(r.sections[0]!.body).toContain('- Nếm hậu vị');
     const back = sectionsToMarkdown({ intro: r.intro, sections: r.sections });
     expect(markdownToSections(back)).toEqual(r);
+  });
+
+  it('tìm ảnh trong markdown và bắt ảnh không tồn tại', () => {
+    const md = 'Mở đầu\n\n![Ông Giáo](photos/1-ong-giao.jpg)\n\n![Kho](/assets/img/lib-quan-1a2b.webp "chú thích")\n\n![Ngoài](https://example.com/a.jpg)';
+    expect(findImageRefs(md)).toEqual(['photos/1-ong-giao.jpg', '/assets/img/lib-quan-1a2b.webp', 'https://example.com/a.jpg']);
+    expect(invalidImageRefs(md, ['assets/img/lib-quan-1a2b.webp'])).toEqual(['photos/1-ong-giao.jpg']);
+    expect(invalidImageRefs(md, [])).toEqual(['photos/1-ong-giao.jpg', '/assets/img/lib-quan-1a2b.webp']);
   });
 
   it('parseFaq và postSlug', () => {
@@ -94,7 +104,11 @@ describe('soạn bài thủ công', () => {
     const bad = await post(`/sites/${id}/posts/new`, { title: 'Ngắn', metaDescription: 'x', body: 'y' });
     expect(bad.status).toBe(200);
     expect(await bad.text()).toContain('Tiêu đề quá ngắn');
-    const created = await post(`/sites/${id}/posts/new`, { title: 'Chọn quán hủ tiếu ngon ở Phan Rang: 5 dấu hiệu', slug: '', h1: '', metaDescription: 'Năm dấu hiệu nhận biết tô hủ tiếu nấu đúng kiểu Nam Vang, đọc để chọn đúng quán ngay lần đầu.', targetKeyword: 'hủ tiếu phan rang', excerpt: 'Năm dấu hiệu.', keyTakeaways: 'Nước lèo trong\nSợi dai', body: BODY, faq: 'Khô hay nước?\nTùy khẩu vị.', heroImageAlt: '' });
+    const badImg = await post(`/sites/${id}/posts/new`, { title: 'Chọn quán hủ tiếu ngon ở Phan Rang: 5 dấu hiệu', metaDescription: 'Năm dấu hiệu nhận biết tô hủ tiếu nấu đúng kiểu Nam Vang, đọc để chọn đúng quán ngay lần đầu.', body: BODY + '\n![Ông Giáo](photos/1-ong-giao.jpg)\n' });
+    expect(await badImg.text()).toContain('Ảnh không tồn tại trên website: photos/1-ong-giao.jpg');
+    const lib = await saveLibraryImage({ db, siteId: id, cacheDir: siteDirs(config.sitesDir, 'manual.test').images, buffer: await sharp({ create: { width: 320, height: 240, channels: 3, background: '#c2410c' } }).png().toBuffer(), alt: 'Tô hủ tiếu', source: 'upload', nameHint: 'to-hu-tieu' });
+    const libName = lib.file.split('/').pop()!;
+    const created = await post(`/sites/${id}/posts/new`, { title: 'Chọn quán hủ tiếu ngon ở Phan Rang: 5 dấu hiệu', slug: '', h1: '', metaDescription: 'Năm dấu hiệu nhận biết tô hủ tiếu nấu đúng kiểu Nam Vang, đọc để chọn đúng quán ngay lần đầu.', targetKeyword: 'hủ tiếu phan rang', excerpt: 'Năm dấu hiệu.', keyTakeaways: 'Nước lèo trong\nSợi dai', body: BODY + `\n![Tô hủ tiếu](/assets/img/${libName})\n`, faq: 'Khô hay nước?\nTùy khẩu vị.', heroImageAlt: '' });
     expect(created.status).toBe(302);
     const page = db.listPages(id).find((p) => p.slug === 'blog/chon-quan-hu-tieu-ngon-o-phan-rang-5-dau-hieu')!;
     expect(page).toBeDefined();
@@ -105,6 +119,11 @@ describe('soạn bài thủ công', () => {
     await worker.drain(30_000);
     expect(fs.existsSync(path.join(outDir, 'blog', 'chon-quan-hu-tieu-ngon-o-phan-rang-5-dau-hieu', 'index.html'))).toBe(true);
     expect(fs.readFileSync(path.join(outDir, 'blog', 'index.html'), 'utf8')).toContain('Năm dấu hiệu.');
+    // ảnh kho chèn trong bài được sao chép vào bản dựng và hiện trong HTML
+    expect(fs.existsSync(path.join(outDir, 'assets', 'img', libName))).toBe(true);
+    expect(fs.readFileSync(path.join(outDir, 'blog', 'chon-quan-hu-tieu-ngon-o-phan-rang-5-dau-hieu', 'index.html'), 'utf8')).toContain(`src="/assets/img/${libName}"`);
+    const detail = await (await app.request(`/sites/${id}/pages/${page.id}`, { headers: { cookie } })).text();
+    expect(detail).toContain(`/sites/${id}/images/file/${libName}`);
 
     // sửa SEO + đổi đường dẫn
     db.upsertImage({ site_id: id, key: `post.chon-quan-hu-tieu-ngon-o-phan-rang-5-dau-hieu.hero`, provider: 'none', provider_id: null, query: null, file: '', width: null, height: null, alt: '', credit: '', credit_url: '' });

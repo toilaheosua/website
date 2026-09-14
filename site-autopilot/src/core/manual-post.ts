@@ -114,3 +114,23 @@ export function postToForm(content: PageContent, slug: string): ManualPostInput 
     heroImageAlt: content.heroImageAlt ?? '',
   };
 }
+
+/** Các đường dẫn ảnh trong markdown: ![alt](đường dẫn). */
+export function findImageRefs(md: string): string[] {
+  const out: string[] = [];
+  for (const m of md.matchAll(/!\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) out.push(m[1] as string);
+  return [...new Set(out)];
+}
+
+/**
+ * Ảnh hợp lệ: URL http(s), hoặc /assets/img/<tệp> có trong kho ảnh của site.
+ * Trả về danh sách đường dẫn không dùng được để báo cho người dùng trước khi đăng.
+ */
+export function invalidImageRefs(md: string, availableFiles: Iterable<string>): string[] {
+  const files = new Set([...availableFiles].map((f) => f.split('/').pop() ?? f));
+  return findImageRefs(md).filter((p) => {
+    if (/^https?:\/\//i.test(p)) return false;
+    const m = p.match(/^\/assets\/img\/([^/?#]+)$/);
+    return !(m && files.has(m[1] as string));
+  });
+}

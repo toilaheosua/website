@@ -161,14 +161,27 @@ function simplifyQuery(q: string): string {
 export function copyImagesToOutput(db: Db, siteId: number, cacheDir: string, outDir: string): number {
   const dest = path.join(outDir, 'assets', 'img');
   fs.mkdirSync(dest, { recursive: true });
-  let n = 0;
+  const copied = new Set<string>();
+  const copy = (file: string) => {
+    const name = path.basename(file);
+    if (copied.has(name)) return;
+    const src = path.join(cacheDir, name);
+    if (!fs.existsSync(src)) return;
+    fs.copyFileSync(src, path.join(dest, name));
+    copied.add(name);
+  };
   for (const img of db.listImages(siteId)) {
     if (!img.file || img.provider === 'none') continue;
-    const src = path.join(cacheDir, path.basename(img.file));
-    if (fs.existsSync(src)) {
-      fs.copyFileSync(src, path.join(dest, path.basename(img.file)));
-      n++;
-    }
+    copy(img.file);
   }
-  return n;
+  // Ảnh kho được chèn thẳng trong nội dung bài (bài viết thủ công): ![alt](/assets/img/lib-xxx.webp)
+  const inLibrary = new Set(db.listLibrary(siteId).map((l) => path.basename(l.file)));
+  const text = db
+    .listPages(siteId)
+    .map((p) => JSON.stringify(p.content))
+    .join('\n');
+  for (const m of text.matchAll(/\/assets\/img\/(lib-[\w.-]+\.webp)/g)) {
+    if (inLibrary.has(m[1] as string)) copy(m[1] as string);
+  }
+  return copied.size;
 }

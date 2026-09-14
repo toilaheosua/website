@@ -26,7 +26,7 @@ import { deleteLibraryFile, saveLibraryImage } from '../generator/library.js';
 import { parseList } from '../core/util.js';
 import { mountEditor } from './editor.js';
 import { INTERVIEW_QUESTIONS, answeredCount } from '../core/interview.js';
-import { buildManualPost, postSlug, postToForm, type ManualPostInput } from '../core/manual-post.js';
+import { buildManualPost, invalidImageRefs, postSlug, postToForm, type ManualPostInput } from '../core/manual-post.js';
 import { autoFixPage, checkQuality, isPass } from '../generator/quality.js';
 import { ROUTES } from '../generator/render-context.js';
 import { file, parseBriefEdit, parseEntity, parseGeneral, parseNewSite, parseWaf, str, type FormBody } from './forms.js';
@@ -487,11 +487,13 @@ export function createApp(deps: WebDeps): Hono {
     faq: str(body, 'faq'),
     heroImageAlt: str(body, 'heroImageAlt'),
   });
-  const validatePost = (v: ManualPostInput): string[] => {
+  const validatePost = (siteId: number, v: ManualPostInput): string[] => {
     const errors: string[] = [];
     if (v.title.trim().length < 10) errors.push('Tiêu đề quá ngắn (tối thiểu 10 ký tự)');
     if (v.metaDescription.trim().length < 50) errors.push('Meta description quá ngắn (tối thiểu 50 ký tự)');
     if (v.body.trim().length < 200) errors.push('Nội dung bài quá ngắn (tối thiểu 200 ký tự)');
+    const bad = invalidImageRefs(v.body, db.listLibrary(siteId).map((l) => l.file));
+    if (bad.length) errors.push(`Ảnh không tồn tại trên website: ${bad.slice(0, 6).join(', ')}${bad.length > 6 ? `... (${bad.length} ảnh)` : ''}. Tải ảnh vào Kho ảnh thật rồi dùng nút "Chèn ảnh từ kho", hoặc dùng địa chỉ https:// đầy đủ, hoặc xóa dòng ảnh đó.`);
     return errors;
   };
   /** Chấm bài thủ công để ghi góp ý; bài của người dùng luôn được đăng. */
@@ -508,18 +510,18 @@ export function createApp(deps: WebDeps): Hono {
       flash(c, { type: 'err', text: 'Site chưa có kế hoạch nội dung, chờ bước Lập kế hoạch xong rồi viết bài.' });
       return c.redirect(`/sites/${site.id}/pages`);
     }
-    return render(c, `Viết bài ${site.domain}`, 'sites', PostForm({ site, values: emptyPost }));
+    return render(c, `Viết bài ${site.domain}`, 'sites', PostForm({ site, values: emptyPost, library: db.listLibrary(site.id) }));
   });
   app.post('/sites/:id/posts/new', async (c) => {
     const site = siteOr404(c);
     if (!site || !site.plan) return c.notFound();
     const body = (await c.req.parseBody()) as FormBody;
     const v = readPostForm(body);
-    const errors = validatePost(v);
+    const errors = validatePost(site.id, v);
     const blog = ROUTES[site.brief.language].blog;
     const slug = postSlug(blog, v.slug, v.title);
     if (db.getPageBySlug(site.id, slug)) errors.push(`Đường dẫn /${slug}/ đã có bài khác`);
-    if (errors.length) return render(c, `Viết bài ${site.domain}`, 'sites', PostForm({ site, values: v, errors }));
+    if (errors.length) return render(c, `Viết bài ${site.domain}`, 'sites', PostForm({ site, values: v, errors, library: db.listLibrary(site.id) }));
     const content = autoFixPage(buildManualPost(v));
     const posts = db.listPages(site.id).filter((p) => p.kind === 'post').length;
     const id = db.upsertPage({ site_id: site.id, kind: 'post', slug, title: content.title, content, sort_order: 10 + posts, status: 'published', review: manualReview(content) });
@@ -535,7 +537,7 @@ export function createApp(deps: WebDeps): Hono {
     const page = db.getPage(Number.parseInt(c.req.param('pageId'), 10));
     if (!site || !page || page.site_id !== site.id) return c.notFound();
     if (page.kind !== 'post') return c.redirect(`/sites/${site.id}/pages/${page.id}`);
-    return render(c, `Soạn ${page.title}`, 'sites', PostForm({ site, pageId: page.id, values: postToForm(page.content, page.slug) }));
+    return render(c, `Soạn ${page.title}`, 'sites', PostForm({ site, pageId: page.id, values: postToForm(page.content, page.slug), library: db.listLibrary(site.id) }));
   });
   app.post('/sites/:id/pages/:pageId/edit', async (c) => {
     const site = siteOr404(c);
@@ -543,12 +545,12 @@ export function createApp(deps: WebDeps): Hono {
     if (!site || !page || page.site_id !== site.id || page.kind !== 'post') return c.notFound();
     const body = (await c.req.parseBody()) as FormBody;
     const v = readPostForm(body);
-    const errors = validatePost(v);
+    const errors = validatePost(site.id, v);
     const blog = ROUTES[site.brief.language].blog;
     const slug = postSlug(blog, v.slug, v.title);
     const other = db.getPageBySlug(site.id, slug);
     if (other && other.id !== page.id) errors.push(`Đường dẫn /${slug}/ đã có bài khác`);
-    if (errors.length) return render(c, `Soạn ${page.title}`, 'sites', PostForm({ site, pageId: page.id, values: v, errors }));
+    if (errors.length) return render(c, `Soạn ${page.title}`, 'sites', PostForm({ site, pageId: page.id, values: v, errors, library: db.listLibrary(site.id) }));
     const content = autoFixPage(buildManualPost(v, page.content));
     db.updatePageById(page.id, { slug, title: content.title, content, status: 'published', review: manualReview(content) });
     if (slug !== page.slug) renamePostSlug(site.id, page.slug, slug);

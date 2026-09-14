@@ -815,7 +815,7 @@ export function PagesList(props: { site: Site; pages: PageRow[] }) {
 }
 
 /** Soạn bài viết thủ công (tạo mới hoặc sửa): markdown một ô, "## " là mục mới. */
-export function PostForm(props: { site: Site; pageId?: number; values: ManualPostInput; errors?: string[] }) {
+export function PostForm(props: { site: Site; pageId?: number; values: ManualPostInput; errors?: string[]; library: LibraryRow[] }) {
   const { site } = props;
   const v = props.values;
   const action = props.pageId ? `/sites/${site.id}/pages/${props.pageId}/edit` : `/sites/${site.id}/posts/new`;
@@ -889,9 +889,24 @@ export function PostForm(props: { site: Site; pageId?: number; values: ManualPos
         <label>
           Nội dung bài <small>markdown: đoạn mở đầu trước, mỗi "## Tiêu đề mục" bắt đầu một mục; "- " danh sách, **in đậm**, "&gt; **Mẹo:** ..." khung lưu ý, [chữ](/duong-dan/) liên kết</small>
         </label>
-        <textarea name="body" style="min-height:420px;font-family:ui-monospace,Consolas,monospace;font-size:.9rem" required>
+        <textarea id="post-body" name="body" style="min-height:420px;font-family:ui-monospace,Consolas,monospace;font-size:.9rem" required>
           {v.body}
         </textarea>
+        <div class="card tight" style="margin:8px 0 12px;background:var(--bg)">
+          <strong>Chèn ảnh từ kho</strong>
+          <div class="help">
+            Nhấp một ảnh để chèn vào vị trí con trỏ trong ô nội dung. Ảnh phải nằm trong <a href={`/sites/${site.id}/library`}>Kho ảnh thật</a> (tải lên ở đó trước). Đường dẫn ảnh dạng khác (ví dụ photos/anh.jpg) sẽ bị chặn vì không tồn tại trên website; ảnh từ trang khác dùng địa chỉ https:// đầy đủ.
+          </div>
+          {props.library.length ? (
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+              {props.library.map((l) => (
+                <img src={`/sites/${site.id}/images/file/${l.file.split('/').pop()}`} alt={l.alt} title={l.alt} style="width:96px;height:72px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid transparent" data-md={`![${l.alt.replace(/[\[\]]/g, '')}](/assets/img/${l.file.split('/').pop()})`} onclick="var t=document.getElementById('post-body');var md='\n'+this.getAttribute('data-md')+'\n';var a=t.selectionStart||0,b=t.selectionEnd||0;t.value=t.value.slice(0,a)+md+t.value.slice(b);t.selectionStart=t.selectionEnd=a+md.length;t.focus();" />
+              ))}
+            </div>
+          ) : (
+            <div class="muted small" style="margin-top:6px">Kho ảnh trống.</div>
+          )}
+        </div>
         <label>
           Câu hỏi thường gặp <small>mỗi khối cách nhau một dòng trống: dòng đầu là câu hỏi, các dòng sau là trả lời</small>
         </label>
@@ -910,6 +925,8 @@ export function PostForm(props: { site: Site; pageId?: number; values: ManualPos
 
 export function PageDetail(props: { site: Site; page: PageRow }) {
   const c = props.page.content;
+  // Ảnh kho trong nội dung hiện đúng trên dashboard (bản dựng dùng /assets/img/, dashboard đọc từ cache)
+  const previewHtml = (md: string) => mdToHtml(md).replace(/src="\/assets\/img\//g, `src="/sites/${props.site.id}/images/file/`);
   return (
     <div class="card">
       <p>
@@ -1044,11 +1061,11 @@ export function PageDetail(props: { site: Site; page: PageRow }) {
       </form>
       <h2 style="margin-top:20px">Xem trước nội dung</h2>
       <div class="prose-preview">
-        {raw(mdToHtml(c.intro))}
+        {raw(previewHtml(c.intro))}
         {c.sections.map((s) => (
           <>
             <h3>{s.heading}</h3>
-            {raw(mdToHtml(s.body))}
+            {raw(previewHtml(s.body))}
           </>
         ))}
       </div>
