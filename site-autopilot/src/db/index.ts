@@ -399,6 +399,49 @@ export class Db {
     else this.raw.prepare('UPDATE site_pages SET status=?, review=?, updated_at=? WHERE id=?').run(status, review ? JSON.stringify(review) : null, nowIso(), id);
   }
 
+  /** Cập nhật trang theo id (kể cả đổi slug). Slug mới phải chưa có trong site. */
+  updatePageById(id: number, patch: { slug?: string; title?: string; content?: PageContent; status?: 'published' | 'needs_review'; review?: ContentReview | null }): void {
+    const cols: string[] = [];
+    const vals: unknown[] = [];
+    if (patch.slug !== undefined) {
+      cols.push('slug=?');
+      vals.push(patch.slug);
+    }
+    if (patch.title !== undefined) {
+      cols.push('title=?');
+      vals.push(patch.title);
+    }
+    if (patch.content !== undefined) {
+      cols.push('content=?');
+      vals.push(JSON.stringify(patch.content));
+    }
+    if (patch.status !== undefined) {
+      cols.push('status=?');
+      vals.push(patch.status);
+    }
+    if (patch.review !== undefined) {
+      cols.push('review=?');
+      vals.push(patch.review ? JSON.stringify(patch.review) : null);
+    }
+    cols.push('updated_at=?');
+    vals.push(nowIso(), id);
+    this.raw.prepare(`UPDATE site_pages SET ${cols.join(', ')} WHERE id=?`).run(...(vals as (string | number | null)[]));
+  }
+
+  /** Đổi tiền tố key ảnh (ví dụ post.cu. → post.moi.) khi bài đổi đường dẫn. */
+  renameImageKeys(siteId: number, oldPrefix: string, newPrefix: string): number {
+    const rows = this.listImages(siteId).filter((i) => i.key.startsWith(oldPrefix));
+    for (const r of rows) {
+      this.raw.prepare('UPDATE site_images SET key=? WHERE id=?').run(newPrefix + r.key.slice(oldPrefix.length), r.id);
+    }
+    return rows.length;
+  }
+
+  deleteImagesByPrefix(siteId: number, prefix: string): number {
+    const r = this.raw.prepare('DELETE FROM site_images WHERE site_id = ? AND key LIKE ?').run(siteId, prefix.replace(/[%_]/g, '\\  listPages(siteId: number): Page[] {') + '%');
+    return Number(r.changes);
+  }
+
   listPages(siteId: number): Page[] {
     const rows = this.raw.prepare('SELECT * FROM site_pages WHERE site_id = ? ORDER BY sort_order, id').all(siteId) as unknown as PageRow[];
     return rows.map((r) => this.hydratePage(r));

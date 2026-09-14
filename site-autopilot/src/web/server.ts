@@ -21,11 +21,14 @@ import { brandReplacementPairs, replaceTextInSite } from '../core/rename.js';
 import type { IntegrationView } from './views.js';
 import { adminUserName, checkPassword, hasAdminCredential, isAuthenticated, login, logout, passwordSource, requireAuth, sameOriginGuard, setAdminPassword, validateNewPassword } from './auth.js';
 import { LoginPage, Page, SetupPage, type Flash } from './layout.js';
-import { EditBriefForm, EntityForm, InterviewPage, JobsPage, LibraryPage, LogsPage, NewSiteForm, PageDetail, PagesList, SettingsPage, SiteDetail, SitesIndex } from './views.js';
+import { EditBriefForm, EntityForm, InterviewPage, JobsPage, PostForm, LibraryPage, LogsPage, NewSiteForm, PageDetail, PagesList, SettingsPage, SiteDetail, SitesIndex } from './views.js';
 import { deleteLibraryFile, saveLibraryImage } from '../generator/library.js';
 import { parseList } from '../core/util.js';
 import { mountEditor } from './editor.js';
 import { INTERVIEW_QUESTIONS, answeredCount } from '../core/interview.js';
+import { buildManualPost, postSlug, postToForm, type ManualPostInput } from '../core/manual-post.js';
+import { autoFixPage, checkQuality, isPass } from '../generator/quality.js';
+import { ROUTES } from '../generator/render-context.js';
 import { file, parseBriefEdit, parseEntity, parseGeneral, parseNewSite, parseWaf, str, type FormBody } from './forms.js';
 
 export interface WebDeps {
@@ -471,6 +474,151 @@ export function createApp(deps: WebDeps): Hono {
     }
     return c.redirect(`/sites/${site.id}/pages`);
   });
+  /* ---------------- bài viết thủ công: tạo, soạn thảo, xóa, sửa SEO ---------------- */
+  const readPostForm = (body: FormBody): ManualPostInput => ({
+    title: str(body, 'title'),
+    slug: str(body, 'slug'),
+    h1: str(body, 'h1'),
+    metaDescription: str(body, 'metaDescription'),
+    targetKeyword: str(body, 'targetKeyword'),
+    excerpt: str(body, 'excerpt'),
+    keyTakeaways: str(body, 'keyTakeaways'),
+    body: str(body, 'body'),
+    faq: str(body, 'faq'),
+    heroImageAlt: str(body, 'heroImageAlt'),
+  });
+  const validatePost = (v: ManualPostInput): string[] => {
+    const errors: string[] = [];
+    if (v.title.trim().length < 10) errors.push('Tiêu đề quá ngắn (tối thiểu 10 ký tự)');
+    if (v.metaDescription.trim().length < 50) errors.push('Meta description quá ngắn (tối thiểu 50 ký tự)');
+    if (v.body.trim().length < 200) errors.push('Nội dung bài quá ngắn (tối thiểu 200 ký tự)');
+    return errors;
+  };
+  /** Chấm bài thủ công để ghi góp ý; bài của người dùng luôn được đăng. */
+  const manualReview = (content: Parameters<typeof checkQuality>[0]) => {
+    const issues = checkQuality(content);
+    return { pass: isPass(issues), issues, summary: isPass(issues) ? 'Bài tự viết, đạt kiểm tra tự động.' : 'Bài tự viết, có lỗi kiểm tra tự động cần xem.', approvedBy: 'user' as const, checkedAt: new Date().toISOString() };
+  };
+  const emptyPost: ManualPostInput = { title: '', slug: '', h1: '', metaDescription: '', targetKeyword: '', excerpt: '', keyTakeaways: '', body: '', faq: '', heroImageAlt: '' };
+
+  app.get('/sites/:id/posts/new', (c) => {
+    const site = siteOr404(c);
+    if (!site) return c.notFound();
+    if (!site.plan) {
+      flash(c, { type: 'err', text: 'Site chưa có kế hoạch nội dung, chờ bước Lập kế hoạch xong rồi viết bài.' });
+      return c.redirect(`/sites/${site.id}/pages`);
+    }
+    return render(c, `Viết bài ${site.domain}`, 'sites', PostForm({ site, values: emptyPost }));
+  });
+  app.post('/sites/:id/posts/new', async (c) => {
+    const site = siteOr404(c);
+    if (!site || !site.plan) return c.notFound();
+    const body = (await c.req.parseBody()) as FormBody;
+    const v = readPostForm(body);
+    const errors = validatePost(v);
+    const blog = ROUTES[site.brief.language].blog;
+    const slug = postSlug(blog, v.slug, v.title);
+    if (db.getPageBySlug(site.id, slug)) errors.push(`Đường dẫn /${slug}/ đã có bài khác`);
+    if (errors.length) return render(c, `Viết bài ${site.domain}`, 'sites', PostForm({ site, values: v, errors }));
+    const content = autoFixPage(buildManualPost(v));
+    const posts = db.listPages(site.id).filter((p) => p.kind === 'post').length;
+    const id = db.upsertPage({ site_id: site.id, kind: 'post', slug, title: content.title, content, sort_order: 10 + posts, status: 'published', review: manualReview(content) });
+    const short = slug.slice(blog.length + 1);
+    if (!site.plan.posts.some((p) => p.slug === short)) db.updateSite(site.id, { plan: { ...site.plan, posts: [...site.plan.posts, { title: content.title, slug: short, targetKeyword: content.targetKeyword ?? '', angle: 'Bài viết thủ công', imageQuery: '' }] } });
+    db.addLog({ site_id: site.id, step: 'manual_post', level: 'info', message: `Viết bài thủ công "${content.title}" (/${slug}/)` });
+    if (site.site_path) db.scheduleRebuild(site.id, config.REBUILD_DEBOUNCE_SEC);
+    flash(c, { type: 'ok', text: `Đã đăng bài "${content.title}", đang dựng lại và đưa lên host. Vào Chỉnh sửa trực quan để chọn ảnh đầu bài.` });
+    return c.redirect(`/sites/${site.id}/pages/${id}`);
+  });
+  app.get('/sites/:id/pages/:pageId/edit', (c) => {
+    const site = siteOr404(c);
+    const page = db.getPage(Number.parseInt(c.req.param('pageId'), 10));
+    if (!site || !page || page.site_id !== site.id) return c.notFound();
+    if (page.kind !== 'post') return c.redirect(`/sites/${site.id}/pages/${page.id}`);
+    return render(c, `Soạn ${page.title}`, 'sites', PostForm({ site, pageId: page.id, values: postToForm(page.content, page.slug) }));
+  });
+  app.post('/sites/:id/pages/:pageId/edit', async (c) => {
+    const site = siteOr404(c);
+    const page = db.getPage(Number.parseInt(c.req.param('pageId'), 10));
+    if (!site || !page || page.site_id !== site.id || page.kind !== 'post') return c.notFound();
+    const body = (await c.req.parseBody()) as FormBody;
+    const v = readPostForm(body);
+    const errors = validatePost(v);
+    const blog = ROUTES[site.brief.language].blog;
+    const slug = postSlug(blog, v.slug, v.title);
+    const other = db.getPageBySlug(site.id, slug);
+    if (other && other.id !== page.id) errors.push(`Đường dẫn /${slug}/ đã có bài khác`);
+    if (errors.length) return render(c, `Soạn ${page.title}`, 'sites', PostForm({ site, pageId: page.id, values: v, errors }));
+    const content = autoFixPage(buildManualPost(v, page.content));
+    db.updatePageById(page.id, { slug, title: content.title, content, status: 'published', review: manualReview(content) });
+    if (slug !== page.slug) renamePostSlug(site.id, page.slug, slug);
+    db.addLog({ site_id: site.id, step: 'manual_post', level: 'info', message: `Soạn thảo bài "${content.title}"${slug !== page.slug ? ` (đổi đường dẫn /${page.slug}/ → /${slug}/)` : ''}` });
+    if (site.plan && site.site_path) db.scheduleRebuild(site.id, config.REBUILD_DEBOUNCE_SEC);
+    flash(c, { type: 'ok', text: 'Đã lưu bài, đang dựng lại và đưa lên host.' });
+    return c.redirect(`/sites/${site.id}/pages/${page.id}`);
+  });
+  app.post('/sites/:id/pages/:pageId/meta', async (c) => {
+    const site = siteOr404(c);
+    const page = db.getPage(Number.parseInt(c.req.param('pageId'), 10));
+    if (!site || !page || page.site_id !== site.id) return c.notFound();
+    const body = (await c.req.parseBody()) as FormBody;
+    const content = autoFixPage(
+      PageContentSchema.parse({
+        ...page.content,
+        title: str(body, 'title') || page.content.title,
+        metaDescription: str(body, 'metaDescription') || page.content.metaDescription,
+        h1: str(body, 'h1') || page.content.h1,
+        targetKeyword: str(body, 'targetKeyword') || undefined,
+        heroImageAlt: str(body, 'heroImageAlt') || undefined,
+        excerpt: page.kind === 'post' ? str(body, 'excerpt') || undefined : page.content.excerpt,
+      }),
+    );
+    let slug = page.slug;
+    if (page.kind === 'post') {
+      const blog = ROUTES[site.brief.language].blog;
+      slug = postSlug(blog, str(body, 'slug'), content.title);
+      const other = db.getPageBySlug(site.id, slug);
+      if (other && other.id !== page.id) {
+        flash(c, { type: 'err', text: `Đường dẫn /${slug}/ đã có bài khác.` });
+        return c.redirect(`/sites/${site.id}/pages/${page.id}`);
+      }
+    }
+    db.updatePageById(page.id, { slug, title: content.title, content });
+    if (slug !== page.slug) renamePostSlug(site.id, page.slug, slug);
+    db.addLog({ site_id: site.id, step: 'manual_post', level: 'info', message: `Sửa thông tin SEO trang "${content.title}"` });
+    if (site.plan && site.site_path) db.scheduleRebuild(site.id, config.REBUILD_DEBOUNCE_SEC);
+    flash(c, { type: 'ok', text: 'Đã lưu thông tin SEO, đang dựng lại và đưa lên host.' });
+    return c.redirect(`/sites/${site.id}/pages/${page.id}`);
+  });
+  app.post('/sites/:id/pages/:pageId/delete', (c) => {
+    const site = siteOr404(c);
+    const page = db.getPage(Number.parseInt(c.req.param('pageId'), 10));
+    if (!site || !page || page.site_id !== site.id) return c.notFound();
+    if (page.kind !== 'post') {
+      flash(c, { type: 'err', text: 'Chỉ xóa được bài viết blog; các trang cố định không xóa được.' });
+      return c.redirect(`/sites/${site.id}/pages`);
+    }
+    const blog = ROUTES[site.brief.language].blog;
+    const short = page.slug.slice(blog.length + 1);
+    db.deletePage(page.id);
+    db.deleteImagesByPrefix(site.id, `post.${short}.`);
+    if (site.plan) db.updateSite(site.id, { plan: { ...site.plan, posts: site.plan.posts.filter((p) => p.slug !== short) } });
+    db.addLog({ site_id: site.id, step: 'manual_post', level: 'info', message: `Xóa bài "${page.title}" (/${page.slug}/)` });
+    if (site.plan && site.site_path) db.scheduleRebuild(site.id, config.REBUILD_DEBOUNCE_SEC);
+    flash(c, { type: 'ok', text: `Đã xóa bài "${page.title}", đang dựng lại. Đường dẫn cũ sẽ báo 404.` });
+    return c.redirect(`/sites/${site.id}/pages`);
+  });
+  /** Bài đổi đường dẫn: đổi key ảnh và slug trong kế hoạch để ảnh đầu bài và bước sinh nội dung không tạo bản trùng. */
+  const renamePostSlug = (siteId: number, oldSlug: string, newSlug: string) => {
+    const site = db.getSite(siteId);
+    if (!site) return;
+    const blog = ROUTES[site.brief.language].blog;
+    const oldShort = oldSlug.slice(blog.length + 1);
+    const newShort = newSlug.slice(blog.length + 1);
+    db.renameImageKeys(siteId, `post.${oldShort}.`, `post.${newShort}.`);
+    if (site.plan) db.updateSite(siteId, { plan: { ...site.plan, posts: site.plan.posts.map((p) => (p.slug === oldShort ? { ...p, slug: newShort } : p)) } });
+  };
+
   app.post('/sites/:id/pages/:pageId/regenerate', (c) => {
     const site = siteOr404(c);
     const page = db.getPage(Number.parseInt(c.req.param('pageId'), 10));

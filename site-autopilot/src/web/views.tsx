@@ -11,6 +11,7 @@ import { mdToHtml } from '../generator/markdown.js';
 import { validateEntity } from '../generator/schema.js';
 import { JOB_LABELS } from '../core/jobs.js';
 import { INTERVIEW_GROUPS, INTERVIEW_QUESTIONS, answeredCount, type InterviewData } from '../core/interview.js';
+import type { ManualPostInput } from '../core/manual-post.js';
 import { Badge, STATUS_LABEL } from './layout.js';
 
 /* ------------------------------------------------------------------ */
@@ -736,11 +737,16 @@ export function PagesList(props: { site: Site; pages: PageRow[] }) {
         <a href={`/sites/${props.site.id}`}>← Quay lại site</a>
       </p>
       <div class="help" style="margin-bottom:12px">Mỗi trang đi qua cổng kiểm duyệt (kiểm tra tự động + AI duyệt) trước khi đăng. Trang "Chưa đạt" được giữ lại, không dựng và không vào sitemap; bạn xem lỗi trong chi tiết trang rồi sửa bằng Chỉnh sửa trực quan, bấm "Duyệt và đăng" hoặc "Sinh lại". Trang "Chưa kiểm" là trang viết trước khi có cổng kiểm duyệt: bấm "Kiểm duyệt lại tất cả" để chấm mà không viết lại (mỗi trang một lượt gọi AI ngắn).</div>
-      <form method="post" action={`/sites/${props.site.id}/pages/review`} class="inline" style="margin-bottom:12px">
-        <button class="btn secondary sm" type="submit">
-          Kiểm duyệt lại tất cả (không viết lại)
-        </button>
-      </form>
+      <div class="actions" style="margin-bottom:12px">
+        <a class="btn sm" href={`/sites/${props.site.id}/posts/new`}>
+          + Viết bài thủ công
+        </a>
+        <form method="post" action={`/sites/${props.site.id}/pages/review`} class="inline">
+          <button class="btn secondary sm" type="submit">
+            Kiểm duyệt lại tất cả (không viết lại)
+          </button>
+        </form>
+      </div>
       <form method="post" action={`/sites/${props.site.id}/replace-text`} class="card tight" style="margin-bottom:14px;background:var(--bg)">
         <strong>Thay chữ trong toàn bộ nội dung</strong>
         <div class="help">Dùng khi sửa tên thương hiệu, địa chỉ, số điện thoại viết sai ở mọi trang. Phân biệt hoa thường, thay đúng chuỗi đã nhập, xong tự dựng lại và đưa lên host.</div>
@@ -791,12 +797,113 @@ export function PagesList(props: { site: Site; pages: PageRow[] }) {
                       Sinh lại
                     </button>
                   </form>
+                  {pg.kind === 'post' ? (
+                    <form method="post" action={`/sites/${props.site.id}/pages/${pg.id}/delete`} class="inline">
+                      <button class="btn danger sm" type="submit" onclick="return confirm('Xóa bài này khỏi website? Đường dẫn cũ sẽ báo 404.')">
+                        Xóa
+                      </button>
+                    </form>
+                  ) : null}
                 </div>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** Soạn bài viết thủ công (tạo mới hoặc sửa): markdown một ô, "## " là mục mới. */
+export function PostForm(props: { site: Site; pageId?: number; values: ManualPostInput; errors?: string[] }) {
+  const { site } = props;
+  const v = props.values;
+  const action = props.pageId ? `/sites/${site.id}/pages/${props.pageId}/edit` : `/sites/${site.id}/posts/new`;
+  return (
+    <div class="card">
+      <p>
+        <a href={props.pageId ? `/sites/${site.id}/pages/${props.pageId}` : `/sites/${site.id}/pages`}>← Quay lại</a>
+      </p>
+      <h1>{props.pageId ? 'Soạn thảo bài viết' : 'Viết bài thủ công'}: {site.domain}</h1>
+      <p class="muted">Bài do bạn tự viết được đăng ngay, không qua AI viết lại. Cổng kiểm duyệt vẫn chấm và ghi góp ý để bạn tham khảo, không giữ bài lại.</p>
+      {props.errors?.length ? (
+        <div class="alert err">
+          <ul style="margin:0;padding-left:18px">
+            {props.errors.map((e) => (
+              <li>{e}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <form method="post" action={action}>
+        <div class="row">
+          <div>
+            <label>
+              Tiêu đề (title) <small>50 đến 65 ký tự</small>
+            </label>
+            <input type="text" name="title" value={v.title} required />
+          </div>
+          <div>
+            <label>
+              Đường dẫn <small>để trống = tự tạo từ tiêu đề; nằm dưới /blog/</small>
+            </label>
+            <input type="text" name="slug" value={v.slug} class="mono" placeholder="vi-du-ten-bai" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>
+              H1 <small>để trống = dùng tiêu đề</small>
+            </label>
+            <input type="text" name="h1" value={v.h1} />
+          </div>
+          <div>
+            <label>Từ khóa mục tiêu</label>
+            <input type="text" name="targetKeyword" value={v.targetKeyword} />
+          </div>
+        </div>
+        <label>
+          Meta description <small>140 đến 158 ký tự</small>
+        </label>
+        <textarea name="metaDescription" style="min-height:60px" required>
+          {v.metaDescription}
+        </textarea>
+        <div class="row">
+          <div>
+            <label>
+              Mô tả ngắn <small>1 đến 2 câu, hiện ở danh sách blog</small>
+            </label>
+            <input type="text" name="excerpt" value={v.excerpt} />
+          </div>
+          <div>
+            <label>Alt ảnh đầu bài</label>
+            <input type="text" name="heroImageAlt" value={v.heroImageAlt} />
+          </div>
+        </div>
+        <label>
+          Tóm tắt nhanh <small>mỗi dòng một ý, 3 đến 5 ý, để trống nếu không cần</small>
+        </label>
+        <textarea name="keyTakeaways" style="min-height:70px">
+          {v.keyTakeaways}
+        </textarea>
+        <label>
+          Nội dung bài <small>markdown: đoạn mở đầu trước, mỗi "## Tiêu đề mục" bắt đầu một mục; "- " danh sách, **in đậm**, "&gt; **Mẹo:** ..." khung lưu ý, [chữ](/duong-dan/) liên kết</small>
+        </label>
+        <textarea name="body" style="min-height:420px;font-family:ui-monospace,Consolas,monospace;font-size:.9rem" required>
+          {v.body}
+        </textarea>
+        <label>
+          Câu hỏi thường gặp <small>mỗi khối cách nhau một dòng trống: dòng đầu là câu hỏi, các dòng sau là trả lời</small>
+        </label>
+        <textarea name="faq" style="min-height:110px" placeholder={'Hủ tiếu khô hay nước ngon hơn?\nTùy khẩu vị: khô đậm vị nước sốt, nước thanh và nóng lâu.\n\nQuán có giao hàng không?\nCó, trong bán kính 3 km buổi sáng.'}>
+          {v.faq}
+        </textarea>
+        <div class="actions" style="margin-top:12px">
+          <button class="btn" type="submit">
+            {props.pageId ? 'Lưu bài và dựng lại' : 'Đăng bài và dựng lại'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -809,29 +916,86 @@ export function PageDetail(props: { site: Site; page: PageRow }) {
         <a href={`/sites/${props.site.id}/pages`}>← Danh sách trang</a>
       </p>
       <h1>{c.h1}</h1>
-      <div class="kv" style="margin-bottom:14px">
-        <dt>Title</dt>
-        <dd>
-          {c.title} <span class="muted small">({c.title.length} ký tự)</span>
-        </dd>
-        <dt>Meta description</dt>
-        <dd>
-          {c.metaDescription} <span class="muted small">({c.metaDescription.length} ký tự)</span>
-        </dd>
-        <dt>Đường dẫn</dt>
-        <dd class="mono">
-          <a href={`https://${props.site.domain}/${props.page.slug}${props.page.slug ? '/' : ''}`} target="_blank" rel="noopener">
-            /{props.page.slug}{props.page.slug ? '/' : ''}
+      <div class="actions" style="margin-bottom:12px">
+        <a class="btn sm" href={`/sites/${props.site.id}/editor?page=${props.page.id}`}>
+          Sửa trực quan
+        </a>
+        {props.page.kind === 'post' ? (
+          <a class="btn secondary sm" href={`/sites/${props.site.id}/pages/${props.page.id}/edit`}>
+            Soạn thảo bài (markdown)
           </a>
-        </dd>
-        <dt>Từ khóa</dt>
-        <dd>{c.targetKeyword ?? ''}</dd>
-        <dt>Kiểm duyệt</dt>
-        <dd>
-          <ReviewBadge page={props.page} />
-          {props.page.review?.summary ? <span class="muted small"> {props.page.review.summary}</span> : null}
-        </dd>
+        ) : null}
+        <a class="btn secondary sm" href={`https://${props.site.domain}/${props.page.slug}${props.page.slug ? '/' : ''}`} target="_blank" rel="noopener">
+          Mở trên site ↗
+        </a>
+        {props.page.kind === 'post' ? (
+          <form method="post" action={`/sites/${props.site.id}/pages/${props.page.id}/delete`} class="inline">
+            <button class="btn danger sm" type="submit" onclick="return confirm('Xóa bài này khỏi website? Đường dẫn cũ sẽ báo 404.')">
+              Xóa bài
+            </button>
+          </form>
+        ) : null}
       </div>
+      <form method="post" action={`/sites/${props.site.id}/pages/${props.page.id}/meta`} class="card tight" style="margin-bottom:14px;background:var(--bg)">
+        <strong>Thông tin SEO (sửa thủ công)</strong>
+        <div class="row">
+          <div>
+            <label>
+              Title <small>{c.title.length} ký tự, nên 50 đến 65</small>
+            </label>
+            <input type="text" name="title" value={c.title} required />
+          </div>
+          <div>
+            <label>
+              Đường dẫn <small>{props.page.kind === 'post' ? 'đổi được, đường dẫn cũ sẽ 404' : 'cố định theo loại trang'}</small>
+            </label>
+            <input type="text" name="slug" value={props.page.slug} readonly={props.page.kind !== 'post'} class="mono" />
+          </div>
+        </div>
+        <label>
+          Meta description <small>{c.metaDescription.length} ký tự, nên 140 đến 158</small>
+        </label>
+        <textarea name="metaDescription" style="min-height:60px">
+          {c.metaDescription}
+        </textarea>
+        <div class="row">
+          <div>
+            <label>H1</label>
+            <input type="text" name="h1" value={c.h1} required />
+          </div>
+          <div>
+            <label>Từ khóa mục tiêu</label>
+            <input type="text" name="targetKeyword" value={c.targetKeyword ?? ''} />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>
+              Alt ảnh đầu trang <small>mô tả ảnh cho Google</small>
+            </label>
+            <input type="text" name="heroImageAlt" value={c.heroImageAlt ?? ''} />
+          </div>
+          {props.page.kind === 'post' ? (
+            <div>
+              <label>
+                Mô tả ngắn <small>hiện ở danh sách blog</small>
+              </label>
+              <input type="text" name="excerpt" value={c.excerpt ?? ''} />
+            </div>
+          ) : (
+            <div />
+          )}
+        </div>
+        <div class="actions" style="margin-top:8px">
+          <button class="btn sm" type="submit">
+            Lưu thông tin SEO và dựng lại
+          </button>
+          <span class="small">
+            Kiểm duyệt: <ReviewBadge page={props.page} />
+            {props.page.review?.summary ? <span class="muted"> {props.page.review.summary}</span> : null}
+          </span>
+        </div>
+      </form>
       {props.page.review?.issues.length ? (
         <div class={`alert ${props.page.status === 'needs_review' || !props.page.review?.pass ? 'warn' : 'info'}`}>
           <b>{props.page.status === 'needs_review' ? 'Lỗi cần sửa trước khi đăng' : props.page.review?.pass ? 'Góp ý của cổng kiểm duyệt' : 'Trang đang đăng nhưng chưa đạt kiểm duyệt'}</b>
