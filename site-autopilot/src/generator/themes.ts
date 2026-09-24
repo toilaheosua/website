@@ -6,7 +6,7 @@ import { pick, shuffle } from '../core/util.js';
  * để các site không giống nhau về dấu vết.
  * Mọi font đều hỗ trợ tiếng Việt trên Google Fonts.
  */
-const FONT_PAIRS: { heading: string; body: string; families: string[] }[] = [
+export const FONT_PAIRS: { heading: string; body: string; families: string[] }[] = [
   { heading: "'Be Vietnam Pro', sans-serif", body: "'Inter', sans-serif", families: ['Be+Vietnam+Pro:wght@500;700;800', 'Inter:wght@400;500;600'] },
   { heading: "'Lora', serif", body: "'Nunito', sans-serif", families: ['Lora:wght@600;700', 'Nunito:wght@400;600;700'] },
   { heading: "'Montserrat', sans-serif", body: "'Roboto', sans-serif", families: ['Montserrat:wght@600;700;800', 'Roboto:wght@400;500'] },
@@ -17,7 +17,7 @@ const FONT_PAIRS: { heading: string; body: string; families: string[] }[] = [
   { heading: "'Josefin Sans', sans-serif", body: "'Nunito', sans-serif", families: ['Josefin+Sans:wght@600;700', 'Nunito:wght@400;600'] },
 ];
 
-const PALETTES: ThemeConfig['palette'][] = [
+export const PALETTES: ThemeConfig['palette'][] = [
   { primary: '#1e4fa3', primaryDark: '#163b7a', accent: '#f59e0b', bg: '#ffffff', surface: '#f3f6fb', text: '#1f2937', muted: '#6b7280' },
   { primary: '#b45309', primaryDark: '#92400e', accent: '#15803d', bg: '#fffdf8', surface: '#fbf3e6', text: '#292524', muted: '#78716c' },
   { primary: '#0f172a', primaryDark: '#020617', accent: '#06b6d4', bg: '#ffffff', surface: '#f1f5f9', text: '#0f172a', muted: '#64748b' },
@@ -69,4 +69,37 @@ export function themeCssVars(t: ThemeConfig): string {
 
 export function googleFontsUrl(t: ThemeConfig): string {
   return `https://fonts.googleapis.com/css2?${t.fonts.googleFamilies.map((f) => `family=${f}`).join('&')}&display=swap`;
+}
+
+export const RADIUS_CHOICES = ['0px', '4px', '8px', '12px', '16px', '999px'];
+
+/** Dữ liệu tùy chỉnh giao diện từ trang Thiết kế; trường nào bỏ trống thì giữ nguyên. */
+export interface ThemeTweaks {
+  palette?: Partial<ThemeConfig['palette']>;
+  fontPair?: number;
+  radius?: string;
+  headerStyle?: ThemeConfig['headerStyle'];
+  heroStyle?: ThemeConfig['heroStyle'];
+  cardStyle?: ThemeConfig['cardStyle'];
+}
+
+const HEX = /^#[0-9a-f]{6}$/i;
+
+export function applyThemeTweaks(theme: ThemeConfig, t: ThemeTweaks): ThemeConfig {
+  const out: ThemeConfig = structuredClone(theme);
+  for (const [k, v] of Object.entries(t.palette ?? {})) if (typeof v === 'string' && HEX.test(v)) (out.palette as Record<string, string>)[k] = v.toLowerCase();
+  if (t.fontPair !== undefined && FONT_PAIRS[t.fontPair]) {
+    const fp = FONT_PAIRS[t.fontPair]!;
+    out.fonts = { heading: fp.heading, body: fp.body, googleFamilies: fp.families };
+  }
+  if (t.radius && RADIUS_CHOICES.includes(t.radius)) out.radius = t.radius;
+  if (t.headerStyle && ['left', 'center', 'split'].includes(t.headerStyle)) out.headerStyle = t.headerStyle;
+  if (t.heroStyle && ['image-bg', 'split', 'minimal'].includes(t.heroStyle)) out.heroStyle = t.heroStyle;
+  if (t.cardStyle && ['shadow', 'flat', 'outline'].includes(t.cardStyle)) out.cardStyle = t.cardStyle;
+  return out;
+}
+
+/** Chỉ số cặp font đang dùng trong theme (để chọn sẵn trên form). */
+export function fontPairIndex(theme: ThemeConfig): number {
+  return Math.max(0, FONT_PAIRS.findIndex((p) => p.heading === theme.fonts.heading && p.body === theme.fonts.body));
 }

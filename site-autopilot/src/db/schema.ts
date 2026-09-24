@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS sites (
   live_at TEXT,
   health TEXT,
   interview TEXT,
+  layout TEXT,
   error_summary TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))

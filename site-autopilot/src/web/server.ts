@@ -25,6 +25,7 @@ import { EditBriefForm, EntityForm, ImportPostPage, InterviewPage, JobsPage, Pos
 import { deleteLibraryFile, saveLibraryImage } from '../generator/library.js';
 import { parseList } from '../core/util.js';
 import { mountEditor } from './editor.js';
+import { mountDesign } from './design.js';
 import { INTERVIEW_QUESTIONS, answeredCount } from '../core/interview.js';
 import { buildManualPost, invalidImageRefs, postSlug, postToForm, type ManualPostInput } from '../core/manual-post.js';
 import { parseImportedPost, rewriteImageRefs, unpackUpload } from '../core/import-post.js';
@@ -758,6 +759,7 @@ export function createApp(deps: WebDeps): Hono {
   });
   /* ---------------- chỉnh sửa trực quan ---------------- */
   mountEditor(app, { db, config, siteOr404, render: render as never, enqueueRebuild: (siteId) => db.scheduleRebuild(siteId, config.REBUILD_DEBOUNCE_SEC) });
+  mountDesign(app, { db, config, siteOr404, render: render as never, enqueueRebuild: (siteId) => db.scheduleRebuild(siteId, config.REBUILD_DEBOUNCE_SEC) });
 
   /* ---------------- xem bản dựng cục bộ ---------------- */
   app.get('/sites/:id/preview/*', (c) => {

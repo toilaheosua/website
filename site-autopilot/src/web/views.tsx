@@ -422,6 +422,9 @@ export function SiteDetail(props: { site: Site; steps: StepRow[]; defs: StepDef[
           <a class="btn sm" href={`/sites/${site.id}/editor`} style="background:#16a34a;border-color:#16a34a">
             Chỉnh sửa trực quan
           </a>
+          <a class="btn sm" href={`/sites/${site.id}/design`} style="background:#7c3aed;border-color:#7c3aed">
+            Thiết kế trang chủ
+          </a>
           <a class="btn sm" href={`/sites/${site.id}/entity`}>
             Entity SEO
           </a>

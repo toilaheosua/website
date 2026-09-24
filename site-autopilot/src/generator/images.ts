@@ -158,7 +158,7 @@ function simplifyQuery(q: string): string {
 }
 
 /** Sao chép ảnh từ cache vào thư mục output của site. */
-export function copyImagesToOutput(db: Db, siteId: number, cacheDir: string, outDir: string): number {
+export function copyImagesToOutput(db: Db, siteId: number, cacheDir: string, outDir: string, extraLibraryIds: number[] = []): number {
   const dest = path.join(outDir, 'assets', 'img');
   fs.mkdirSync(dest, { recursive: true });
   const copied = new Set<string>();
@@ -182,6 +182,11 @@ export function copyImagesToOutput(db: Db, siteId: number, cacheDir: string, out
     .join('\n');
   for (const m of text.matchAll(/\/assets\/img\/(lib-[\w.-]+\.webp)/g)) {
     if (inLibrary.has(m[1] as string)) copy(m[1] as string);
+  }
+  // Ảnh kho dùng trong bố cục trang chủ (bộ sưu tập, ảnh + chữ)
+  if (extraLibraryIds.length) {
+    const wanted = new Set(extraLibraryIds);
+    for (const l of db.listLibrary(siteId)) if (wanted.has(l.id)) copy(l.file);
   }
   return copied.size;
 }

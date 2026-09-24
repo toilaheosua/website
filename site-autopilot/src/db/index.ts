@@ -5,6 +5,7 @@ import { SCHEMA_SQL } from './schema.js';
 import { nowIso, safeJsonParse } from '../core/util.js';
 import type { ContentReview } from '../generator/quality.js';
 import type { InterviewData } from '../core/interview.js';
+import type { SiteLayout } from '../generator/layout.js';
 import {
   EntitySchema,
   GeneralSettingsSchema,
@@ -67,13 +68,14 @@ export interface SiteRow {
   live_at: string | null;
   health: string | null;
   interview: string | null;
+  layout: string | null;
   error_summary: string | null;
   created_at: string;
   updated_at: string;
 }
 
 /** Site đã giải mã JSON, dùng khắp nơi trong ứng dụng. */
-export interface Site extends Omit<SiteRow, 'brief' | 'entity' | 'plan' | 'theme' | 'cf_name_servers' | 'cf_ruleset_ids' | 'health' | 'interview'> {
+export interface Site extends Omit<SiteRow, 'brief' | 'entity' | 'plan' | 'theme' | 'cf_name_servers' | 'cf_ruleset_ids' | 'health' | 'interview' | 'layout'> {
   brief: SiteBrief;
   entity: EntityData;
   plan: SitePlan | null;
@@ -83,6 +85,8 @@ export interface Site extends Omit<SiteRow, 'brief' | 'entity' | 'plan' | 'theme
   health: HealthReport | null;
   /** Bộ Câu Hỏi: câu trả lời của chủ doanh nghiệp */
   interview: InterviewData | null;
+  /** Bố cục trang chủ tùy chỉnh (null = mặc định theo theme) */
+  layout: SiteLayout | null;
 }
 
 export interface StepRow {
@@ -196,6 +200,7 @@ export class Db {
     if (!cols.includes('review')) this.raw.exec('ALTER TABLE site_pages ADD COLUMN review TEXT');
     const siteCols = (this.raw.prepare('PRAGMA table_info(sites)').all() as unknown as { name: string }[]).map((c) => c.name);
     if (!siteCols.includes('interview')) this.raw.exec('ALTER TABLE sites ADD COLUMN interview TEXT');
+    if (!siteCols.includes('layout')) this.raw.exec('ALTER TABLE sites ADD COLUMN layout TEXT');
   }
 
   close(): void {
@@ -292,6 +297,7 @@ export class Db {
       cf_ruleset_ids: safeJsonParse<{ custom?: string; ratelimit?: string }>(row.cf_ruleset_ids, {}),
       health: safeJsonParse<HealthReport | null>(row.health, null),
       interview: safeJsonParse<InterviewData | null>(row.interview, null),
+      layout: safeJsonParse<SiteLayout | null>(row.layout, null),
     };
   }
 
@@ -326,7 +332,7 @@ export class Db {
   updateSite(id: number, patch: Partial<Omit<Site, 'id' | 'created_at'>>): void {
     const cols: string[] = [];
     const vals: unknown[] = [];
-    const jsonFields = new Set(['brief', 'entity', 'plan', 'theme', 'cf_name_servers', 'cf_ruleset_ids', 'health', 'interview']);
+    const jsonFields = new Set(['brief', 'entity', 'plan', 'theme', 'cf_name_servers', 'cf_ruleset_ids', 'health', 'interview', 'layout']);
     for (const [k, v] of Object.entries(patch)) {
       if (v === undefined) continue;
       cols.push(`${k} = ?`);

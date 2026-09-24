@@ -1,4 +1,4 @@
-import type { ImageRow, Page, Site } from '../db/index.js';
+import type { ImageRow, LibraryRow, Page, Site } from '../db/index.js';
 import type { EntityData, SitePlan, ThemeConfig } from '../core/types.js';
 import type { BrandAssets } from './logo.js';
 
@@ -95,6 +95,8 @@ export interface NavItem {
   key: string;
 }
 
+import type { SiteLayout } from './layout.js';
+
 export interface RenderContext {
   site: Site;
   siteUrl: string;
@@ -112,6 +114,10 @@ export interface RenderContext {
   buildDate: string;
   /** true khi dựng trang cho Chỉnh sửa trực quan: thêm data-edit vào phần tử sửa được */
   edit?: boolean;
+  /** Kho ảnh thật của site (cho khối bộ sưu tập, ảnh + chữ) */
+  library: LibraryRow[];
+  /** Bố cục trang chủ đang dùng để dựng (ghi đè site.layout khi xem trước thiết kế) */
+  layout?: SiteLayout | null;
 }
 
 /** Thuộc tính đánh dấu chữ thuần sửa được (chỉ ở chế độ chỉnh sửa). */

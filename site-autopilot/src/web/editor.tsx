@@ -236,6 +236,21 @@ const EDITOR_JS = String.raw`
 })();
 `;
 
+/**
+ * Đường dẫn tuyệt đối trong HTML bản dựng → route của dashboard
+ * (ảnh từ cache, CSS/JS từ bộ sinh, còn lại từ bản dựng xem trước). Dùng cho Chỉnh sửa trực quan và Thiết kế trang chủ.
+ */
+export function rewriteHtmlForDashboard(html: string, siteId: number): string {
+  const prefix = `/sites/${siteId}`;
+  const map = (p: string): string => {
+    if (p.startsWith('assets/img/')) return `${prefix}/images/file/${p.slice('assets/img/'.length)}`;
+    if (p.startsWith('assets/css/style.css')) return `${prefix}/editor/style.css`;
+    if (p.startsWith('assets/js/site.js')) return `${prefix}/editor/site.js`;
+    return `${prefix}/preview/${p}`;
+  };
+  return html.replace(/(href|src|content)="\/(?!\/)([^"]*)"/g, (_m, attr: string, p: string) => `${attr}="${map(p)}"`).replace(/url\(\/(?!\/)([^)]*)\)/g, (_m, p: string) => `url(${map(p)})`);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Route                                                               */
 /* ------------------------------------------------------------------ */
@@ -281,14 +296,7 @@ export function mountEditor(app: Hono, deps: EditorDeps): void {
       return c.text(`Không dựng được trang: ${errorMessage(err)}`, 500);
     }
     const prefix = `/sites/${site.id}`;
-    // Đường dẫn tuyệt đối trong HTML → route của dashboard (ảnh từ cache, CSS/JS từ bộ sinh, còn lại từ bản dựng xem trước)
-    const map = (p: string): string => {
-      if (p.startsWith('assets/img/')) return `${prefix}/images/file/${p.slice('assets/img/'.length)}`;
-      if (p.startsWith('assets/css/style.css')) return `${prefix}/editor/style.css`;
-      if (p.startsWith('assets/js/site.js')) return `${prefix}/editor/site.js`;
-      return `${prefix}/preview/${p}`;
-    };
-    html = html.replace(/(href|src|content)="\/(?!\/)([^"]*)"/g, (_m, attr: string, p: string) => `${attr}="${map(p)}"`).replace(/url\(\/(?!\/)([^)]*)\)/g, (_m, p: string) => `url(${map(p)})`);
+    html = rewriteHtmlForDashboard(html, site.id);
     const fields = collectEditableFields(page.content, site.plan);
     const library = db.listLibrary(site.id).map((l) => ({ id: l.id, url: `${prefix}/images/file/${path.basename(l.file)}`, alt: l.alt }));
     const pages = db.listPages(site.id).filter((p) => p.status === 'published').map((p) => ({ id: p.id, slug: p.slug, title: p.title }));

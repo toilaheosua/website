@@ -7,6 +7,7 @@ import { googleFontsUrl } from './themes.js';
 import { articleSchema, breadcrumbSchema, buildGraph, faqSchema, organizationSchema, personSchema, servicesSchema, sameAsList, webPageSchema, websiteSchema, type SchemaContext } from './schema.js';
 import { ed, edMd, findImage, pageHref, pageUrl, type RenderContext } from './render-context.js';
 import { slugify } from '../core/util.js';
+import { defaultHomeLayout, type HomeBlock } from './layout.js';
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                             */
@@ -60,7 +61,7 @@ function Faq(props: { ctx: RenderContext; items: { question: string; answer: str
   if (!props.items.length) return null;
   const base = props.basePath ?? 'faq';
   return (
-    <section class="section faq" id="faq">
+    <section class="section faq" id="faq" data-block="faq">
       <div class="container">
         <div class="section-head">
           <h2>{props.heading ?? props.ctx.t.faq}</h2>
@@ -80,7 +81,7 @@ function CtaBand(props: { ctx: RenderContext; heading?: string; text?: string })
   const { ctx } = props;
   const contactHref = pageHref(ctx.routes.contact);
   return (
-    <section class="cta-band">
+    <section class="cta-band" data-block="cta">
       <div class="container">
         <h2 {...ed(ctx, 'plan.ctaPrimary')}>{props.heading ?? ctx.plan.ctaPrimary}</h2>
         <p {...ed(ctx, 'plan.tagline')}>{props.text ?? ctx.plan.tagline}</p>
@@ -120,7 +121,7 @@ function PostCard(props: { ctx: RenderContext; page: Page }) {
 function ServiceCards(props: { ctx: RenderContext; heading: string; linkBase: string }) {
   const { ctx } = props;
   return (
-    <section class="section alt" id="services">
+    <section class="section alt" id="services" data-block="services">
       <div class="container">
         <div class="section-head">
           <h2>{props.heading}</h2>
@@ -398,109 +399,38 @@ export function renderHome(ctx: RenderContext, page: Page): string {
     webPageSchema(sc, c, ctx.siteUrl + '/', { heroImage: heroUrl(ctx, 'home.hero') }),
     faqSchema(c.faq.length ? c.faq : ctx.plan.faq),
   ]);
-  const queue = [...c.sections];
+  const layout = ctx.layout?.home?.length ? ctx.layout.home : defaultHomeLayout(ctx.theme, c, ctx.plan, ctx.site.brief.siteType, posts.length > 0);
   const blocks: Child[] = [];
-  for (const key of ctx.theme.sectionOrder) {
-    switch (key) {
-      case 'intro': {
-        const s = queue.shift();
-        if (s) blocks.push(proseSection(ctx, s, 'home', 0, false));
-        break;
-      }
-      case 'services':
-        blocks.push(<ServiceCards ctx={ctx} heading={ctx.t.ourServices} linkBase={pageHref(ctx.routes.services)} />);
-        break;
-      case 'topics':
-        blocks.push(<ServiceCards ctx={ctx} heading={ctx.t.mainTopics} linkBase="" />);
-        break;
-      case 'why': {
-        const s = queue.shift();
-        blocks.push(
-          <section class="section" id="why">
-            <div class="container">
-              <div class="section-head">
-                <h2 {...(s ? ed(ctx, `sections.${c.sections.indexOf(s)}.heading`) : {})}>{s?.heading || ctx.t.whyUs}</h2>
-                {s ? <div class="prose" {...edMd(ctx, `sections.${c.sections.indexOf(s)}.body`)}>{raw(mdToHtml(s.body))}</div> : null}
-              </div>
-              {ctx.plan.differentiators.length ? (
-                <ul class="why-list">
-                  {ctx.plan.differentiators.map((d, i) => (
-                    <li {...ed(ctx, `plan.differentiators.${i}`)}>{d}</li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          </section>,
-        );
-        break;
-      }
-      case 'process': {
-        const idx = queue.findIndex((s) => /quy trình|process|các bước|steps/i.test(s.heading));
-        const s = idx >= 0 ? queue.splice(idx, 1)[0] : queue.shift();
-        if (!s) break;
-        const steps = stepsFromSection(s);
-        blocks.push(
-          <section class="section alt" id="process">
-            <div class="container">
-              <div class="section-head">
-                <h2 {...ed(ctx, `sections.${c.sections.indexOf(s)}.heading`)}>{s.heading || ctx.t.process}</h2>
-              </div>
-              {steps && !ctx.edit ? (
-                <div class="steps">
-                  {steps.map((st) => (
-                    <div class="step">{raw(mdToHtml(st))}</div>
-                  ))}
-                </div>
-              ) : (
-                <div class="prose" {...edMd(ctx, `sections.${c.sections.indexOf(s)}.body`)}>{raw(mdToHtml(s.body))}</div>
-              )}
-            </div>
-          </section>,
-        );
-        break;
-      }
-      case 'posts':
-        if (posts.length) {
-          blocks.push(
-            <section class="section posts" id="posts">
-              <div class="container">
-                <div class="section-head">
-                  <h2>{ctx.t.latestPosts}</h2>
-                </div>
-                <div class="grid">
-                  {posts.map((p) => (
-                    <PostCard ctx={ctx} page={p} />
-                  ))}
-                </div>
-                <p style="margin-top:20px">
-                  <a class="btn secondary" href={pageHref(ctx.routes.blog)}>
-                    {ctx.t.allPosts}
-                  </a>
-                </p>
-              </div>
-            </section>,
-          );
-        }
-        break;
-      case 'faq':
-        while (queue.length) {
-          const s = queue.shift();
-          if (s) blocks.push(proseSection(ctx, s, 'home', c.sections.indexOf(s), true));
-        }
-        blocks.push(<Faq ctx={ctx} items={c.faq.length ? c.faq : ctx.plan.faq} basePath={c.faq.length ? 'faq' : 'plan.faq'} />);
-        break;
-      case 'cta':
-        blocks.push(<CtaBand ctx={ctx} />);
-        break;
-      default:
-        break;
-    }
+  for (const b of layout) {
+    if (b.hidden) continue;
+    const node = renderHomeBlock(ctx, page, b, isBlog);
+    if (node) blocks.push(node);
   }
+
+  return doc(
+    <Layout ctx={ctx} page={c} slug="" jsonLd={jsonLd} activeKey="home">
+      {blocks}
+    </Layout>,
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Khối trang chủ (bố cục kéo thả)                                     */
+/* ------------------------------------------------------------------ */
+
+function heroBlock(ctx: RenderContext, c: PageContent, isBlog: boolean, props: Record<string, unknown>) {
   const heroImg = findImage(ctx, 'home.hero');
-  const heroStyle = ctx.theme.heroStyle;
-  const hero =
-    heroStyle === 'image-bg' && heroImg ? (
-      <section class="hero image-bg">
+  const styleProp = String(props.style ?? 'theme');
+  const heroStyle = styleProp === 'theme' ? ctx.theme.heroStyle : styleProp;
+  const secondary = props.secondaryButton !== false;
+  const secondaryBtn = secondary ? (
+    <a class="btn secondary" href={isBlog ? pageHref(ctx.routes.blog) : pageHref(ctx.routes.services)} {...ed(ctx, 'plan.ctaSecondary')}>
+      {ctx.plan.ctaSecondary}
+    </a>
+  ) : null;
+  if (heroStyle === 'image-bg' && heroImg) {
+    return (
+      <section class="hero image-bg" data-block="hero">
         <img class="bg" src={`/${heroImg.file}`} alt="" width={heroImg.width ?? undefined} height={heroImg.height ?? undefined} fetchpriority="high" data-edit-img={ctx.edit ? 'home.hero' : undefined} />
         <div class="container">
           <h1 {...ed(ctx, 'h1')}>{c.h1}</h1>
@@ -509,14 +439,15 @@ export function renderHome(ctx: RenderContext, page: Page): string {
             <a class="btn accent" href={pageHref(ctx.routes.contact)} {...ed(ctx, 'plan.ctaPrimary')}>
               {ctx.plan.ctaPrimary}
             </a>
-            <a class="btn secondary" href={isBlog ? pageHref(ctx.routes.blog) : pageHref(ctx.routes.services)} {...ed(ctx, 'plan.ctaSecondary')}>
-              {ctx.plan.ctaSecondary}
-            </a>
+            {secondaryBtn}
           </div>
         </div>
       </section>
-    ) : heroStyle === 'split' && heroImg ? (
-      <section class="hero split">
+    );
+  }
+  if (heroStyle === 'split' && (heroImg || ctx.edit)) {
+    return (
+      <section class="hero split" data-block="hero">
         <div class="container">
           <div>
             <h1 {...ed(ctx, 'h1')}>{c.h1}</h1>
@@ -525,35 +456,251 @@ export function renderHome(ctx: RenderContext, page: Page): string {
               <a class="btn" href={pageHref(ctx.routes.contact)} {...ed(ctx, 'plan.ctaPrimary')}>
                 {ctx.plan.ctaPrimary}
               </a>
-              <a class="btn secondary" href={isBlog ? pageHref(ctx.routes.blog) : pageHref(ctx.routes.services)} {...ed(ctx, 'plan.ctaSecondary')}>
-                {ctx.plan.ctaSecondary}
-              </a>
+              {secondaryBtn}
             </div>
           </div>
           <Img ctx={ctx} imageKey="home.hero" eager altOverride={c.heroImageAlt || ctx.site.brief.brandName} />
         </div>
       </section>
-    ) : (
-      <section class="hero minimal">
+    );
+  }
+  return (
+    <section class="hero minimal" data-block="hero">
+      <div class="container">
+        <h1 {...ed(ctx, 'h1')}>{c.h1}</h1>
+        <p class="lead" {...edMd(ctx, 'intro')}>{mdToText(c.intro)}</p>
+        {ctx.edit && !heroImg ? <Img ctx={ctx} imageKey="home.hero" eager /> : null}
+        <div class="actions">
+          <a class="btn" href={pageHref(ctx.routes.contact)} {...ed(ctx, 'plan.ctaPrimary')}>
+            {ctx.plan.ctaPrimary}
+          </a>
+          {secondaryBtn}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function contentBlock(ctx: RenderContext, c: PageContent, props: Record<string, unknown>) {
+  const idx = Number(props.section ?? -1);
+  const s = c.sections[idx];
+  const layout = String(props.layout ?? 'prose');
+  const alt = Boolean(props.alt);
+  if (layout === 'why') {
+    if (!s && !ctx.plan.differentiators.length) return null;
+    return (
+      <section class={`section${alt ? ' alt' : ''}`} id="why" data-block="content">
         <div class="container">
-          <h1 {...ed(ctx, 'h1')}>{c.h1}</h1>
-          <p class="lead" {...edMd(ctx, 'intro')}>{mdToText(c.intro)}</p>
-          {ctx.edit && !heroImg ? <Img ctx={ctx} imageKey="home.hero" eager /> : null}
-          <div class="actions">
-            <a class="btn" href={pageHref(ctx.routes.contact)} {...ed(ctx, 'plan.ctaPrimary')}>
-              {ctx.plan.ctaPrimary}
-            </a>
+          <div class="section-head">
+            <h2 {...(s ? ed(ctx, `sections.${idx}.heading`) : {})}>{s?.heading || ctx.t.whyUs}</h2>
+            {s ? <div class="prose" {...edMd(ctx, `sections.${idx}.body`)}>{raw(mdToHtml(s.body))}</div> : null}
           </div>
+          {ctx.plan.differentiators.length ? (
+            <ul class="why-list">
+              {ctx.plan.differentiators.map((d, i) => (
+                <li {...ed(ctx, `plan.differentiators.${i}`)}>{d}</li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       </section>
     );
+  }
+  if (!s) return null;
+  if (layout === 'process') {
+    const steps = stepsFromSection(s);
+    return (
+      <section class={`section${alt ? ' alt' : ''}`} id="process" data-block="content">
+        <div class="container">
+          <div class="section-head">
+            <h2 {...ed(ctx, `sections.${idx}.heading`)}>{s.heading || ctx.t.process}</h2>
+          </div>
+          {steps && !ctx.edit ? (
+            <div class="steps">
+              {steps.map((st) => (
+                <div class="step">{raw(mdToHtml(st))}</div>
+              ))}
+            </div>
+          ) : (
+            <div class="prose" {...edMd(ctx, `sections.${idx}.body`)}>{raw(mdToHtml(s.body))}</div>
+          )}
+        </div>
+      </section>
+    );
+  }
+  return proseSection(ctx, s, 'home', idx, alt);
+}
 
-  return doc(
-    <Layout ctx={ctx} page={c} slug="" jsonLd={jsonLd} activeKey="home">
-      {hero}
-      {blocks}
-    </Layout>,
+function postsBlock(ctx: RenderContext, props: Record<string, unknown>) {
+  const count = Math.max(1, Math.min(12, Number(props.count ?? 3) || 3));
+  const posts = ctx.pages.filter((p) => p.kind === 'post').slice(0, count);
+  if (!posts.length) return null;
+  return (
+    <section class="section posts" id="posts" data-block="posts">
+      <div class="container">
+        <div class="section-head">
+          <h2>{String(props.heading ?? '').trim() || ctx.t.latestPosts}</h2>
+        </div>
+        <div class="grid">
+          {posts.map((p) => (
+            <PostCard ctx={ctx} page={p} />
+          ))}
+        </div>
+        <p style="margin-top:20px">
+          <a class="btn secondary" href={pageHref(ctx.routes.blog)}>
+            {ctx.t.allPosts}
+          </a>
+        </p>
+      </div>
+    </section>
   );
+}
+
+function textBlock(props: Record<string, unknown>) {
+  const heading = String(props.heading ?? '').trim();
+  const body = String(props.body ?? '').trim();
+  if (!heading && !body) return null;
+  const center = props.align === 'center';
+  return (
+    <section class={`section${props.alt ? ' alt' : ''}`} data-block="text">
+      <div class="container">
+        <div class="prose" style={center ? 'text-align:center;margin:0 auto' : undefined}>
+          {heading ? <h2>{heading}</h2> : null}
+          {body ? raw(mdToHtml(body)) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function libImage(ctx: RenderContext, id: unknown) {
+  const n = Number(id);
+  return Number.isFinite(n) ? ctx.library.find((l) => l.id === n) : undefined;
+}
+
+function imageTextBlock(ctx: RenderContext, props: Record<string, unknown>) {
+  const img = libImage(ctx, props.image);
+  const heading = String(props.heading ?? '').trim();
+  const body = String(props.body ?? '').trim();
+  if (!img && !heading && !body) return null;
+  const pic = img ? <img src={`/${img.file}`} alt={img.alt} width={img.width ?? undefined} height={img.height ?? undefined} loading="lazy" /> : null;
+  const txt = (
+    <div>
+      {heading ? <h2>{heading}</h2> : null}
+      <div class="prose">{raw(mdToHtml(body))}</div>
+    </div>
+  );
+  return (
+    <section class={`section${props.alt ? ' alt' : ''}`} data-block="image_text">
+      <div class="container">
+        <div class="two-col">
+          {props.side === 'left' ? pic : txt}
+          {props.side === 'left' ? txt : pic}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function galleryBlock(ctx: RenderContext, props: Record<string, unknown>) {
+  const ids = Array.isArray(props.images) ? props.images : [];
+  const imgs = ids.map((id) => libImage(ctx, id)).filter((x): x is NonNullable<typeof x> => Boolean(x));
+  if (!imgs.length) return null;
+  const cols = Math.max(2, Math.min(4, Number(props.columns ?? 3) || 3));
+  const heading = String(props.heading ?? '').trim();
+  return (
+    <section class="section" data-block="gallery">
+      <div class="container">
+        {heading ? (
+          <div class="section-head">
+            <h2>{heading}</h2>
+          </div>
+        ) : null}
+        <div class="gallery" style={`grid-template-columns:repeat(${cols},1fr)`}>
+          {imgs.map((im) => (
+            <figure>
+              <img src={`/${im.file}`} alt={im.alt} width={im.width ?? undefined} height={im.height ?? undefined} loading="lazy" />
+            </figure>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function contactBlock(ctx: RenderContext, props: Record<string, unknown>) {
+  const e = ctx.entity;
+  const mapSrc = props.showMap !== false && e.mapEmbedUrl && /^https:\/\/(www\.)?google\.com\/maps\/embed/.test(e.mapEmbedUrl) ? e.mapEmbedUrl : '';
+  const address = [e.address.streetAddress, e.address.addressLocality, e.address.addressRegion].filter(Boolean).join(', ');
+  if (!address && !e.telephone && !e.openingHours.length) return null;
+  return (
+    <section class={`section${props.alt === false ? '' : ' alt'}`} id="contact-info" data-block="contact">
+      <div class="container">
+        <div class="section-head">
+          <h2>{String(props.heading ?? '').trim() || ctx.t.contact}</h2>
+        </div>
+        <div class="contact-grid">
+          <dl>
+            {address ? (
+              <>
+                <dt>{ctx.t.address}</dt>
+                <dd>{address}</dd>
+              </>
+            ) : null}
+            {e.telephone ? (
+              <>
+                <dt>{ctx.t.phone}</dt>
+                <dd>
+                  <a href={`tel:${e.telephone.replace(/\s+/g, '')}`}>{e.telephone}</a>
+                </dd>
+              </>
+            ) : null}
+            {e.openingHours.length ? (
+              <>
+                <dt>{ctx.t.hours}</dt>
+                <dd>{e.openingHours.join('; ')}</dd>
+              </>
+            ) : null}
+          </dl>
+          {mapSrc ? (
+            <div class="map">
+              <iframe src={mapSrc} loading="lazy" referrerpolicy="no-referrer-when-downgrade" title={ctx.t.address}></iframe>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Dựng một khối theo loại; trả về null khi khối không có gì để hiện. */
+export function renderHomeBlock(ctx: RenderContext, page: Page, b: HomeBlock, isBlog: boolean): Child | null {
+  const c = page.content;
+  const p = b.props ?? {};
+  switch (b.type) {
+    case 'hero':
+      return heroBlock(ctx, c, isBlog, p);
+    case 'content':
+      return contentBlock(ctx, c, p);
+    case 'services':
+      return <ServiceCards ctx={ctx} heading={String(p.heading ?? '').trim() || (isBlog ? ctx.t.mainTopics : ctx.t.ourServices)} linkBase={isBlog ? '' : pageHref(ctx.routes.services)} />;
+    case 'posts':
+      return postsBlock(ctx, p);
+    case 'faq':
+      return <Faq ctx={ctx} items={c.faq.length ? c.faq : ctx.plan.faq} basePath={c.faq.length ? 'faq' : 'plan.faq'} heading={String(p.heading ?? '').trim() || undefined} />;
+    case 'cta':
+      return <CtaBand ctx={ctx} heading={String(p.heading ?? '').trim() || undefined} text={String(p.text ?? '').trim() || undefined} />;
+    case 'text':
+      return textBlock(p);
+    case 'image_text':
+      return imageTextBlock(ctx, p);
+    case 'gallery':
+      return galleryBlock(ctx, p);
+    case 'contact':
+      return contactBlock(ctx, p);
+    default:
+      return null;
+  }
 }
 
 function proseSection(ctx: RenderContext, s: Section, pageSlug: string, index: number, alt: boolean) {

@@ -3,6 +3,8 @@ import path from 'node:path';
 import type { Db, Page, Site } from '../db/index.js';
 import { buildBrandAssets } from './logo.js';
 import { copyImagesToOutput } from './images.js';
+import { layoutLibraryIds, type SiteLayout } from './layout.js';
+import type { ThemeConfig } from '../core/types.js';
 import { siteCss, SITE_JS } from './site-css.js';
 import { ROUTES, UI_STRINGS, buildNav, type RenderContext } from './render-context.js';
 import { renderNotFound, renderPage } from './templates.js';
@@ -29,8 +31,9 @@ export function siteDirs(sitesDir: string, domain: string) {
  * Ngữ cảnh dựng trang cho một site: theme, bộ nhận diện, ảnh, điều hướng.
  * Dùng chung cho dựng toàn bộ site và cho Chỉnh sửa trực quan (edit = true thêm data-edit vào HTML).
  */
-export async function createRenderContext(input: { db: Db; site: Site; sitesDir: string; uploadsDir: string; edit?: boolean }): Promise<{ ctx: RenderContext; outDir: string; imagesDir: string }> {
-  const { db, site } = input;
+export async function createRenderContext(input: { db: Db; site: Site; sitesDir: string; uploadsDir: string; edit?: boolean; themeOverride?: ThemeConfig; layoutOverride?: SiteLayout | null }): Promise<{ ctx: RenderContext; outDir: string; imagesDir: string }> {
+  const { db } = input;
+  const site: Site = input.themeOverride ? { ...input.site, theme: input.themeOverride } : input.site;
   if (!site.plan) throw new AppError('Site chưa có kế hoạch nội dung (gen_plan chưa chạy)');
   if (!site.theme) throw new AppError('Site chưa có theme');
   const pages = db.listPages(site.id).filter((p) => p.status === 'published');
@@ -55,6 +58,8 @@ export async function createRenderContext(input: { db: Db; site: Site; sitesDir:
     year: new Date().getFullYear(),
     buildDate: nowIso(),
     edit: input.edit,
+    library: db.listLibrary(site.id),
+    layout: input.layoutOverride !== undefined ? input.layoutOverride : site.layout,
   };
   return { ctx: { ...base, nav: buildNav(base) }, outDir: dirs.out, imagesDir: dirs.images };
 }
@@ -73,7 +78,7 @@ export async function buildSite(input: { db: Db; site: Site; sitesDir: string; u
   const { pages, images, brand, siteUrl } = ctx;
   if (!pages.some((p) => p.kind === 'home')) throw new AppError('Site chưa có trang chủ (gen_content chưa chạy)');
   const warnings: string[] = [];
-  const copied = copyImagesToOutput(db, site.id, dirs.images, outDir);
+  const copied = copyImagesToOutput(db, site.id, dirs.images, outDir, layoutLibraryIds(site.layout));
   if (copied < images.size) warnings.push(`Thiếu ${images.size - copied} ảnh trong cache, trang sẽ bỏ trống vị trí đó`);
 
   fs.writeFileSync(path.join(outDir, 'assets', 'css', 'style.css'), siteCss(site.theme));
