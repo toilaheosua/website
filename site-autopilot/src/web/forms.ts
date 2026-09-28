@@ -136,6 +136,11 @@ export function parseWaf(body: FormBody, current: WafSettings): WafSettings {
       period: 10,
       mitigationTimeout: 10,
     },
+    cache: {
+      enabled: str(body, 'cacheEnabled') === '1',
+      browserTtl: Number.parseInt(str(body, 'cacheBrowserTtl'), 10) || current.cache.browserTtl,
+      edgeTtl: Number.parseInt(str(body, 'cacheEdgeTtl'), 10) || current.cache.edgeTtl,
+    },
   });
 }
 

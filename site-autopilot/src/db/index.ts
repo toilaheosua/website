@@ -81,7 +81,7 @@ export interface Site extends Omit<SiteRow, 'brief' | 'entity' | 'plan' | 'theme
   plan: SitePlan | null;
   theme: ThemeConfig | null;
   cf_name_servers: string[];
-  cf_ruleset_ids: { custom?: string; ratelimit?: string };
+  cf_ruleset_ids: { custom?: string; ratelimit?: string; cache?: string };
   health: HealthReport | null;
   /** Bộ Câu Hỏi: câu trả lời của chủ doanh nghiệp */
   interview: InterviewData | null;
@@ -294,7 +294,7 @@ export class Db {
       plan: safeJsonParse<SitePlan | null>(row.plan, null),
       theme: safeJsonParse<ThemeConfig | null>(row.theme, null),
       cf_name_servers: safeJsonParse<string[]>(row.cf_name_servers, []),
-      cf_ruleset_ids: safeJsonParse<{ custom?: string; ratelimit?: string }>(row.cf_ruleset_ids, {}),
+      cf_ruleset_ids: safeJsonParse<{ custom?: string; ratelimit?: string; cache?: string }>(row.cf_ruleset_ids, {}),
       health: safeJsonParse<HealthReport | null>(row.health, null),
       interview: safeJsonParse<InterviewData | null>(row.interview, null),
       layout: safeJsonParse<SiteLayout | null>(row.layout, null),

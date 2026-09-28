@@ -84,7 +84,7 @@ export async function connectSsh(server: ServerConn): Promise<SshClient> {
     const remote = remoteExists ? parseMd5sum(hashed.stdout) : new Map<string, string>();
     const plan = planUpload(files, remote);
     if (remoteExists && plan.upload.length === 0 && plan.remove.length === 0) {
-      return { files: 0, bytes: 0, unchanged: plan.unchanged, removed: 0 };
+      return { files: 0, bytes: 0, unchanged: plan.unchanged, removed: 0, changed: [], removedFiles: [] };
     }
 
     // Thư mục tạm = bản sao thư mục hiện tại (hoặc rỗng), rồi tạo các thư mục con cần cho tệp mới
@@ -126,7 +126,7 @@ export async function connectSsh(server: ServerConn): Promise<SshClient> {
     ].join(' && ');
     const res = await exec(swap);
     if (res.code !== 0) throw new AppError(`Hoán đổi thư mục site thất bại: ${res.stderr || res.stdout}`);
-    return { files: plan.upload.length, bytes, unchanged: plan.unchanged, removed: plan.remove.length };
+    return { files: plan.upload.length, bytes, unchanged: plan.unchanged, removed: plan.remove.length, changed: plan.upload.map((f) => f.rel), removedFiles: plan.remove };
   };
 
   return {

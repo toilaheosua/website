@@ -214,6 +214,16 @@ export const WafSettingsSchema = z.object({
       mitigationTimeout: z.number().int().default(10),
     })
     .prefault({}),
+  /** Cache Everything (Cache Rule): cache cả HTML ở biên Cloudflare, xóa theo URL khi nội dung đổi */
+  cache: z
+    .object({
+      enabled: z.boolean().default(true),
+      /** Browser Cache TTL, giây (mặc định 1 giờ) */
+      browserTtl: z.number().int().min(0).default(3600),
+      /** Edge Cache TTL, giây (mặc định 1 tháng) */
+      edgeTtl: z.number().int().min(60).default(2_592_000),
+    })
+    .prefault({}),
 });
 export type WafSettings = z.infer<typeof WafSettingsSchema>;
 

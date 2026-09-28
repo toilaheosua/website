@@ -104,3 +104,43 @@ export function mergeRules(existing: CfRule[], ours: CfRule[], maxRules: number)
   for (const f of foreign.slice(room)) dropped.push(f.description ?? f.expression);
   return { rules: [...ours, ...kept], dropped };
 }
+
+/**
+ * Cache Rule "Cache Everything" (tương đương Page Rule Cache Level: Cache Everything + Browser TTL + Edge TTL):
+ * cache cả HTML ở biên Cloudflare cho apex và www, đặt trong phase http_request_cache_settings.
+ */
+export function buildCacheRule(settings: WafSettings, domain: string): CfRule {
+  const c = settings.cache;
+  return {
+    action: 'set_cache_settings',
+    expression: `(http.host eq "${domain}") or (http.host eq "www.${domain}")`,
+    description: `${RULE_TAG} Cache Everything: edge ${Math.round(c.edgeTtl / 86_400)} ngày, browser ${Math.round(c.browserTtl / 60)} phút`,
+    enabled: true,
+    action_parameters: {
+      cache: true,
+      edge_ttl: { mode: 'override_origin', default: c.edgeTtl },
+      browser_ttl: { mode: 'override_origin', default: c.browserTtl },
+    },
+  };
+}
+
+/**
+ * URL cần xóa cache từ danh sách tệp thay đổi trong bản dựng:
+ * x/index.html → /x/, index.html → /, tệp khác → /đường/dẫn; mỗi URL thêm bản www.
+ * Đổi HTML thì trang blog và sitemap cũng đổi (danh sách bài, ngày cập nhật) nên các tệp đó đã nằm trong danh sách đổi.
+ */
+export function urlsForChangedFiles(domain: string, rels: string[]): string[] {
+  const paths = new Set<string>();
+  for (const rel of rels) {
+    const p = rel.replace(/\\/g, '/');
+    if (p === 'index.html') paths.add('/');
+    else if (p.endsWith('/index.html')) paths.add(`/${p.slice(0, -'index.html'.length)}`);
+    else paths.add(`/${p}`);
+  }
+  const out: string[] = [];
+  for (const p of paths) {
+    out.push(`https://${domain}${p}`);
+    out.push(`https://www.${domain}${p}`);
+  }
+  return out;
+}

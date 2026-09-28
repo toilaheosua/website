@@ -71,7 +71,15 @@ export class MockCloudflare implements CloudflareClient {
     const z = this.zones.get(zoneId);
     if (z) z.botFight = enabled;
   }
-  async purgeCache() {}
+  /** URL đã xóa cache, để kiểm thử */
+  purged: string[] = [];
+  purgedAll = 0;
+  async purgeCache() {
+    this.purgedAll++;
+  }
+  async purgeUrls(_zoneId: string, urls: string[]) {
+    this.purged.push(...urls);
+  }
   async getPhaseRules(zoneId: string, phase: string) {
     const z = this.zones.get(zoneId);
     return { rulesetId: z?.rules[phase] ? 'rs_' + phase : null, rules: z?.rules[phase] ?? [] };
@@ -125,7 +133,7 @@ export function mockSshFactory(mockRoot: string) {
         fs.copyFileSync(f.abs, path.join(dest, f.rel));
         bytes += f.size;
       }
-      return { files: plan.upload.length, bytes, unchanged: plan.unchanged, removed: plan.remove.length };
+      return { files: plan.upload.length, bytes, unchanged: plan.unchanged, removed: plan.remove.length, changed: plan.upload.map((f) => f.rel), removedFiles: plan.remove };
     },
     async close() {},
   });

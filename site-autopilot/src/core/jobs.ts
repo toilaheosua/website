@@ -6,7 +6,7 @@ import type { StepDef } from './pipeline.js';
 import { makeStepContext } from './context.js';
 import { AppError } from './errors.js';
 import { errorMessage, safeJsonParse, slugify } from './util.js';
-import { applyRateLimit, applyWafRules, generateAndSavePage, refreshSiteImages, requiredPages, reviewContent, runBuild, runDeploy, submitIndexNow, type RequiredPage } from './steps.js';
+import { applyCacheRule, applyRateLimit, applyWafRules, generateAndSavePage, refreshSiteImages, requiredPages, reviewContent, runBuild, runDeploy, submitIndexNow, type RequiredPage } from './steps.js';
 import { isPass, type ContentReview } from '../generator/quality.js';
 import { answeredCount, mergeEntitySuggestion } from './interview.js';
 import { siteDirs } from '../generator/builder.js';
@@ -243,8 +243,14 @@ const handlers: Record<string, Handler> = {
     if (!ctx.site.cf_zone_id) throw new AppError('Site chưa có zone Cloudflare');
     const a = await applyWafRules(ctx);
     const b = await applyRateLimit(ctx);
-    ctx.log('info', `Đồng bộ WAF: ${a}; ${b}`);
-    return { waf: a, ratelimit: b };
+    let cache = '';
+    try {
+      cache = await applyCacheRule(ctx);
+    } catch (err) {
+      ctx.log('warn', `Rule Cache Everything: ${errorMessage(err)} (token cần quyền Zone - Cache Rules - Edit)`);
+    }
+    ctx.log('info', `Đồng bộ WAF: ${a}; ${b}${cache ? `; cache: ${cache}` : ''}`);
+    return { waf: a, ratelimit: b, cache };
   },
 
   async sync_all_waf(env) {

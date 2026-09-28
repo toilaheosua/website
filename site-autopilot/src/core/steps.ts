@@ -6,7 +6,7 @@ import type { PageContent, SitePlan } from './types.js';
 import { AppError, ConfigError, TransientError } from './errors.js';
 import { errorMessage, nowIso, randomHex, slugify } from './util.js';
 import { makeTheme } from '../generator/themes.js';
-import { buildCustomRules, buildRateLimitRule, mergeRules, RULE_TAG } from '../generator/waf.js';
+import { buildCacheRule, buildCustomRules, buildRateLimitRule, mergeRules, RULE_TAG, urlsForChangedFiles } from '../generator/waf.js';
 import { collectImageSlots, fetchImagesForSlots } from '../generator/images.js';
 import { buildSite, siteDirs } from '../generator/builder.js';
 import { ROUTES, UI_STRINGS } from '../generator/render-context.js';
@@ -139,6 +139,13 @@ const cfSettings: StepDef = {
       warnings.push(`Bot Fight Mode: ${errorMessage(err)} (token cần quyền Zone - Bot Management - Edit)`);
       ctx.log('warn', `Không bật được Bot Fight Mode: ${errorMessage(err)}`);
     }
+    try {
+      const c = await applyCacheRule(ctx);
+      if (c) applied.push(c);
+    } catch (err) {
+      warnings.push(`Cache Everything: ${errorMessage(err)} (token cần quyền Zone - Cache Rules - Edit)`);
+      ctx.log('warn', `Không cài được rule Cache Everything: ${errorMessage(err)}`);
+    }
     const msg = `Đã đặt ${applied.join(', ')}${warnings.length ? `. Cảnh báo: ${warnings.join('; ')}` : ''}`;
     return { status: 'done', message: msg, output: { applied, warnings } };
   },
@@ -171,6 +178,45 @@ const cfWaf: StepDef = {
     return { status: 'done', message: msg };
   },
 };
+
+/**
+ * Cache Rule "Cache Everything" cho zone: giữ rule của người dùng, thay rule hệ thống (theo RULE_TAG).
+ * Tắt trong Cài đặt thì gỡ rule hệ thống. Trả về mô tả ngắn hoặc '' khi tắt.
+ */
+export async function applyCacheRule(ctx: StepContext): Promise<string> {
+  const zoneId = requireZone(ctx);
+  const { cloudflare } = ctx.services;
+  const settings = ctx.services.wafSettings();
+  const existing = await cloudflare.getPhaseRules(zoneId, 'http_request_cache_settings');
+  const foreign = existing.rules.filter((r) => !(r.description ?? '').startsWith(RULE_TAG));
+  const ours = settings.cache.enabled ? [buildCacheRule(settings, ctx.site.domain)] : [];
+  if (!ours.length && existing.rules.length === foreign.length) return '';
+  const res = await cloudflare.replacePhaseRules(zoneId, 'http_request_cache_settings', [...ours, ...foreign]);
+  ctx.updateSite({ cf_ruleset_ids: { ...ctx.site.cf_ruleset_ids, cache: res.rulesetId } });
+  return ours.length ? ours[0]!.description.replace(`${RULE_TAG} `, '') : 'đã gỡ Cache Everything';
+}
+
+/**
+ * Xóa cache Cloudflare cho đúng các URL vừa thay đổi (trang sửa, bài mới, sitemap, CSS, ảnh).
+ * Nhiều tệp đổi (đổi theme, đổi bố cục) thì xóa toàn bộ cho nhanh.
+ */
+export async function purgeChangedUrls(ctx: StepContext, changed: string[], removed: string[]): Promise<string> {
+  if (!ctx.site.cf_zone_id || ctx.site.cf_zone_status !== 'active') return '';
+  const { cloudflare } = ctx.services;
+  const urls = urlsForChangedFiles(ctx.site.domain, [...changed, ...removed]);
+  try {
+    if (urls.length === 0) return '';
+    if (urls.length > 120) {
+      await cloudflare.purgeCache(ctx.site.cf_zone_id);
+      return `Đã xóa toàn bộ bộ đệm Cloudflare (${changed.length + removed.length} tệp đổi)`;
+    }
+    await cloudflare.purgeUrls(ctx.site.cf_zone_id, urls);
+    return `Đã xóa bộ đệm Cloudflare cho ${urls.length / 2} URL thay đổi`;
+  } catch (err) {
+    ctx.log('warn', `Không xóa được bộ đệm Cloudflare: ${errorMessage(err)}`);
+    return '';
+  }
+}
 
 export async function applyRateLimit(ctx: StepContext): Promise<string> {
   const zoneId = requireZone(ctx);
@@ -463,14 +509,14 @@ const build: StepDef = {
   },
 };
 
-export async function runDeploy(ctx: StepContext): Promise<{ files: number; bytes: number; unchanged: number; removed: number }> {
+export async function runDeploy(ctx: StepContext): Promise<{ files: number; bytes: number; unchanged: number; removed: number; changed: string[]; removedFiles: string[] }> {
   const server = requireServer(ctx);
   const remoteDir = ctx.site.site_path;
   if (!remoteDir) throw new AppError('Chưa biết thư mục site trên host (host_site chưa chạy)');
   const dirs = siteDirs(ctx.config.sitesDir, ctx.site.domain);
   if (!fs.existsSync(path.join(dirs.out, 'index.html'))) throw new AppError('Chưa có bản dựng (build chưa chạy)');
   const ssh = await ctx.services.sshFor(server);
-  let res: { files: number; bytes: number; unchanged: number; removed: number };
+  let res: { files: number; bytes: number; unchanged: number; removed: number; changed: string[]; removedFiles: string[] };
   try {
     res = await ssh.uploadDirectory(dirs.out, remoteDir, { owner: 'www:www' });
     ctx.updateSite({ last_deployed_at: nowIso() });
@@ -481,15 +527,9 @@ export async function runDeploy(ctx: StepContext): Promise<{ files: number; byte
     ctx.log('info', `Host đã có đúng bản dựng này (${res.unchanged} tệp), không cần tải lên`);
     return res;
   }
-  // Xóa bộ đệm Cloudflare để logo, CSS, ảnh mới hiện ngay thay vì bản cũ
-  if (ctx.site.cf_zone_id && ctx.site.cf_zone_status === 'active') {
-    try {
-      await ctx.services.cloudflare.purgeCache(ctx.site.cf_zone_id);
-      ctx.log('info', 'Đã xóa bộ đệm Cloudflare');
-    } catch (err) {
-      ctx.log('warn', `Không xóa được bộ đệm Cloudflare: ${errorMessage(err)}`);
-    }
-  }
+  // Xóa bộ đệm Cloudflare đúng các URL vừa đổi để trang mới hiện ngay, phần còn lại vẫn được cache
+  const purged = await purgeChangedUrls(ctx, res.changed, res.removedFiles);
+  if (purged) ctx.log('info', purged);
   return res;
 }
 

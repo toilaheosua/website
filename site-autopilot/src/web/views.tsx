@@ -1868,6 +1868,44 @@ export function SettingsPage(props: { waf: WafSettings; general: GeneralSettings
             <input type="number" name="requestsPerPeriod" min="10" max="1000" value={String(props.waf.rateLimit.requestsPerPeriod)} style="max-width:200px" />
             <div class="help mono">(starts_with(http.request.uri.path, "/")) đếm theo ip.src + cf.colo.id</div>
           </fieldset>
+          <fieldset>
+            <legend>Cache Everything (Cache Rule)</legend>
+            <label>
+              <input type="checkbox" name="cacheEnabled" value="1" checked={props.waf.cache.enabled} /> Cache cả HTML ở biên Cloudflare cho apex và www (tương đương Page Rule "Cache Level: Cache Everything")
+            </label>
+            <div class="row">
+              <div>
+                <label>Browser Cache TTL</label>
+                <select name="cacheBrowserTtl">
+                  {[
+                    [1800, '30 phút'],
+                    [3600, '1 giờ'],
+                    [14400, '4 giờ'],
+                    [86400, '1 ngày'],
+                  ].map(([v, l]) => (
+                    <option value={String(v)} selected={props.waf.cache.browserTtl === v}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label>Edge Cache TTL</label>
+                <select name="cacheEdgeTtl">
+                  {[
+                    [86400, '1 ngày'],
+                    [604800, '1 tuần'],
+                    [2592000, '1 tháng'],
+                  ].map(([v, l]) => (
+                    <option value={String(v)} selected={props.waf.cache.edgeTtl === v}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div class="help">Mỗi lần sửa trang, viết bài mới hay đổi giao diện, hệ thống chỉ xóa cache đúng các URL thay đổi (trang đó, trang blog, sitemap, CSS, ảnh), các trang khác vẫn được phục vụ từ cache. Token Cloudflare cần thêm quyền Zone → Cache Rules → Edit.</div>
+          </fieldset>
           <div class="actions" style="margin-top:12px">
             <button class="btn" type="submit">
               Lưu

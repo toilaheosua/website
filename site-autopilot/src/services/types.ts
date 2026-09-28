@@ -22,6 +22,8 @@ export interface CfDnsRecord {
   proxied: boolean;
 }
 
+export type CfPhase = 'http_request_firewall_custom' | 'http_ratelimit' | 'http_request_cache_settings';
+
 export interface CfRule {
   id?: string;
   action: string;
@@ -46,10 +48,12 @@ export interface CloudflareClient {
   getZoneSetting(zoneId: string, setting: string): Promise<unknown>;
   setBotFightMode(zoneId: string, enabled: boolean): Promise<void>;
   /** Thay toàn bộ rule của phase (entrypoint ruleset). Trả về id ruleset. */
-  replacePhaseRules(zoneId: string, phase: 'http_request_firewall_custom' | 'http_ratelimit', rules: CfRule[]): Promise<{ rulesetId: string; rules: CfRule[] }>;
-  getPhaseRules(zoneId: string, phase: 'http_request_firewall_custom' | 'http_ratelimit'): Promise<{ rulesetId: string | null; rules: CfRule[] }>;
-  /** Xóa toàn bộ bộ đệm Cloudflare của zone, gọi sau mỗi lần deploy. */
+  replacePhaseRules(zoneId: string, phase: CfPhase, rules: CfRule[]): Promise<{ rulesetId: string; rules: CfRule[] }>;
+  getPhaseRules(zoneId: string, phase: CfPhase): Promise<{ rulesetId: string | null; rules: CfRule[] }>;
+  /** Xóa toàn bộ bộ đệm Cloudflare của zone. */
   purgeCache(zoneId: string): Promise<void>;
+  /** Xóa bộ đệm các URL cụ thể (tối đa 30 mỗi lần gọi, hàm tự chia lô). */
+  purgeUrls(zoneId: string, urls: string[]): Promise<void>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -76,7 +80,7 @@ export interface SshClient {
   exec(command: string, opts?: { timeoutMs?: number }): Promise<{ code: number; stdout: string; stderr: string }>;
   /** Tải một thư mục cục bộ lên thư mục từ xa (ghi đè). */
   /** Tải lên tăng dần: files = số tệp thật sự tải lên, unchanged = số tệp giữ nguyên, removed = số tệp thừa đã xóa. */
-  uploadDirectory(localDir: string, remoteDir: string, opts?: { owner?: string }): Promise<{ files: number; bytes: number; unchanged: number; removed: number }>;
+  uploadDirectory(localDir: string, remoteDir: string, opts?: { owner?: string }): Promise<{ files: number; bytes: number; unchanged: number; removed: number; changed: string[]; removedFiles: string[] }>;
   close(): Promise<void>;
 }
 

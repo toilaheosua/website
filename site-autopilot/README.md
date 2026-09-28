@@ -32,7 +32,7 @@ Cloudflare, Claude, Pexels, Google và Telegram nhập trực tiếp trên dashb
 | Biến | Cách lấy |
 |---|---|
 | `ADMIN_PASSWORD`, `SESSION_SECRET` | Tự đặt. Mật khẩu mạnh, chuỗi bí mật ngẫu nhiên |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens → Create Token → Custom token. Quyền: **Zone · Zone · Edit**, **Zone · DNS · Edit**, **Zone · Zone Settings · Edit**, **Zone · Zone WAF · Edit**, **Zone · Bot Management · Edit**, **Account · Account Settings · Read**. Zone Resources: Include → All zones from an account → chọn tài khoản |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens → Create Token → Custom token. Quyền: **Zone · Zone · Edit**, **Zone · DNS · Edit**, **Zone · Zone Settings · Edit**, **Zone · Zone WAF · Edit**, **Zone · Bot Management · Edit**, **Zone · Cache Purge · Purge**, **Zone · Cache Rules · Edit**, **Account · Account Settings · Read**. Zone Resources: Include → All zones from an account → chọn tài khoản |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare → mở bất kỳ domain → Overview → cột phải "Account ID" |
 | `AAPANEL_URL` | Địa chỉ panel kèm cổng, ví dụ `https://1.2.3.4:31750`. Xem cổng bằng lệnh `bt 14` trên server |
 | `AAPANEL_API_KEY` | aaPanel → Settings → API Interface → bật → sao chép Interface key. Thêm IP máy chạy dashboard vào IP whitelist (chạy trên VPS thì thêm `127.0.0.1` và IP public của VPS) |
@@ -73,6 +73,7 @@ Bước nào lỗi sẽ hiện màu đỏ với nguyên nhân. Bấm "Chạy l�
 - **Cấu trúc theo mục đích trang**: trang chủ, giới thiệu, dịch vụ, bài giải đáp / so sánh / hướng dẫn, liên hệ, chính sách có cấu trúc riêng; không ép độ dài cố định, không bắt mọi trang có callout hay checklist.
 - **Văn phong mẫu**: trong brief, dán 2 đến 3 đoạn văn đúng giọng thương hiệu vào "Đoạn văn mẫu đã duyệt"; AI học cách xưng hô, mức chuyên môn từ đó cho bài mới và trang sinh lại.
 - **Đổi giao diện**: Sửa brief → chọn theme → "Đổi theme và dựng lại".
+- **Cache Everything**: Cài đặt → mục "Cache Everything (Cache Rule)": cache cả HTML ở biên Cloudflare cho apex và www với Browser TTL (mặc định 1 giờ) và Edge TTL (mặc định 1 tháng), tương đương Page Rule "Cache Level: Cache Everything". Rule được cài ở bước SSL Flexible và tối ưu của site mới, hoặc khi bấm "Đồng bộ WAF" với site cũ. Sau mỗi lần deploy, hệ thống xóa cache đúng các URL thay đổi (trang vừa sửa, bài mới, trang blog, sitemap, CSS, ảnh; cả bản www); đổi nhiều tệp (đổi theme, bố cục) thì xóa toàn bộ.
 - **WAF**: Cài đặt → bật tắt Skip Bot, đổi quốc gia được phép, từ cho phép trong query, đường dẫn chặn, ngưỡng rate limit → "Lưu và đồng bộ tất cả site". Ba rule mặc định: Skip Bot cho bot đã xác minh, chặn truy cập ngoài VN (miễn IP server), chặn URL có `/?` lạ cùng xmlrpc và wp-cron; rate limit 100 request mỗi 10 giây.
 - **Đưa lên host tăng dần**: mỗi lần deploy, hệ thống so md5 tệp trên host với bản dựng, chỉ tải tệp mới hoặc đổi, xóa tệp thừa, rồi hoán đổi thư mục như cũ (site đang chạy không bị đụng). Không có gì đổi thì không tải, không xóa cache. Các lần sửa liên tiếp trên dashboard được gộp: job dựng lại chờ REBUILD_DEBOUNCE_SEC giây (mặc định 20) rồi chạy một lần.
 - **Sức khỏe**: tự kiểm tra mỗi 15 phút (DNS qua Cloudflare, HTTPS 200, zone active, SSL Flexible, số rule WAF). Cảnh báo qua Telegram nếu cấu hình.

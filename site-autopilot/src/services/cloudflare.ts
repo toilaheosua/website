@@ -1,4 +1,4 @@
-import type { CfDnsRecord, CfRule, CfZone, CloudflareClient } from './types.js';
+import type { CfDnsRecord, CfRule, CfZone, CloudflareClient , CfPhase } from './types.js';
 import { httpJson } from '../core/http.js';
 import { AppError, ConfigError, TransientError } from '../core/errors.js';
 import { createLogger } from '../core/logger.js';
@@ -37,7 +37,7 @@ export class CloudflareApi implements CloudflareClient {
       if (opts.allowErrorCodes && errs.some((e) => opts.allowErrorCodes?.includes(e.code))) return data;
       const msg = errs.map((e) => `${e.code}: ${e.message}`).join('; ') || `HTTP ${status}`;
       if (status === 401 || status === 403 || errs.some((e) => e.code === 10000 || e.code === 9109 || e.code === 9106)) {
-        throw new AppError(`Cloudflare từ chối quyền (${msg}). Kiểm tra API Token và các quyền: Zone Edit, DNS Edit, Zone Settings Edit, Zone WAF Edit, Bot Management Edit, Cache Purge.`);
+        throw new AppError(`Cloudflare từ chối quyền (${msg}). Kiểm tra API Token và các quyền: Zone Edit, DNS Edit, Zone Settings Edit, Zone WAF Edit, Bot Management Edit, Cache Purge, Cache Rules Edit.`);
       }
       throw new AppError(`Cloudflare API lỗi ở ${method} ${path}: ${msg}`, { details: errs });
     }
@@ -125,14 +125,20 @@ export class CloudflareApi implements CloudflareClient {
     await this.call('POST', `/zones/${zoneId}/purge_cache`, { purge_everything: true });
   }
 
-  async getPhaseRules(zoneId: string, phase: 'http_request_firewall_custom' | 'http_ratelimit'): Promise<{ rulesetId: string | null; rules: CfRule[] }> {
+  async purgeUrls(zoneId: string, urls: string[]): Promise<void> {
+    for (let i = 0; i < urls.length; i += 30) {
+      await this.call('POST', `/zones/${zoneId}/purge_cache`, { files: urls.slice(i, i + 30) });
+    }
+  }
+
+  async getPhaseRules(zoneId: string, phase: CfPhase): Promise<{ rulesetId: string | null; rules: CfRule[] }> {
     // Chưa có ruleset cho phase -> lỗi 10002/10003 "could not find ruleset"
     const r = await this.call<{ id: string; rules?: CfRule[] }>('GET', `/zones/${zoneId}/rulesets/phases/${phase}/entrypoint`, undefined, { allowErrorCodes: [10002, 10003, 10004] });
     if (!r.success || !r.result) return { rulesetId: null, rules: [] };
     return { rulesetId: r.result.id, rules: r.result.rules ?? [] };
   }
 
-  async replacePhaseRules(zoneId: string, phase: 'http_request_firewall_custom' | 'http_ratelimit', rules: CfRule[]): Promise<{ rulesetId: string; rules: CfRule[] }> {
+  async replacePhaseRules(zoneId: string, phase: CfPhase, rules: CfRule[]): Promise<{ rulesetId: string; rules: CfRule[] }> {
     const payload = rules.map((r) => {
       const base: Record<string, unknown> = { action: r.action, expression: r.expression, description: r.description, enabled: r.enabled };
       if (r.action_parameters) base.action_parameters = r.action_parameters;
