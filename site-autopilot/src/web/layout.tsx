@@ -39,6 +39,9 @@ export function Page(props: { title: string; active?: string; mock?: boolean; fl
             <a href="/settings" class={props.active === 'settings' ? 'active' : ''}>
               Cài đặt
             </a>
+            <a href="/security" class={props.active === 'security' ? 'active' : ''}>
+              Bảo mật
+            </a>
           </nav>
           {props.mock ? <span class="mock">MOCK</span> : null}
           <form method="post" action="/logout" class="inline">

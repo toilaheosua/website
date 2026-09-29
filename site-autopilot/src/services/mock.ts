@@ -120,7 +120,8 @@ export class MockAapanel implements AapanelClient {
 export function mockSshFactory(mockRoot: string) {
   return async (_server: ServerConn): Promise<SshClient> => ({
     async exec(command: string) {
-      return { code: 0, stdout: `mock: ${command.slice(0, 60)}`, stderr: '' };
+      // Script bảo mật hosting kết thúc bằng echo AP_OK; mock trả đúng dấu hiệu đó
+      return { code: 0, stdout: command.includes('echo AP_OK') ? 'AP_OK' : `mock: ${command.slice(0, 60)}`, stderr: '' };
     },
     async uploadDirectory(localDir: string, remoteDir: string) {
       const dest = path.join(mockRoot, remoteDir.replace(/^\/+/, ''));

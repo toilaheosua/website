@@ -6,6 +6,7 @@ import { nowIso, safeJsonParse } from '../core/util.js';
 import type { ContentReview } from '../generator/quality.js';
 import type { InterviewData } from '../core/interview.js';
 import type { SiteLayout } from '../generator/layout.js';
+import { HostSecuritySchema, type HostSecurity } from '../generator/host-security.js';
 import {
   EntitySchema,
   GeneralSettingsSchema,
@@ -241,6 +242,14 @@ export class Db {
 
   setWafSettings(v: WafSettings): void {
     this.setSetting('waf', WafSettingsSchema.parse(v));
+  }
+
+  getHostSecurity(): HostSecurity {
+    return HostSecuritySchema.parse(this.getSetting('host_security', {}));
+  }
+
+  setHostSecurity(v: HostSecurity): void {
+    this.setSetting('host_security', HostSecuritySchema.parse(v));
   }
 
   getGeneralSettings(): GeneralSettings {

@@ -9,6 +9,8 @@ import { errorMessage, safeJsonParse, slugify } from './util.js';
 import { applyCacheRule, applyRateLimit, applyWafRules, generateAndSavePage, refreshSiteImages, requiredPages, reviewContent, runBuild, runDeploy, submitIndexNow, type RequiredPage } from './steps.js';
 import { isPass, type ContentReview } from '../generator/quality.js';
 import { answeredCount, mergeEntitySuggestion } from './interview.js';
+import { buildApplyScript, buildFail2banConf, buildNginxHttpConf, buildNginxServerConf, summarize } from '../generator/host-security.js';
+import { fetchIpRanges } from '../services/ip-ranges.js';
 import { siteDirs } from '../generator/builder.js';
 import { saveLibraryImage } from '../generator/library.js';
 import { checkSiteHealth } from '../monitor/health.js';
@@ -95,6 +97,44 @@ const handlers: Record<string, Handler> = {
       await runDeploy(ctx);
     }
     return { changed };
+  },
+
+  /**
+   * Áp cấu hình bảo mật hosting lên mọi server: Nginx (mức http + mức server cho từng site) và fail2ban.
+   * Chạy qua SSH, kiểm tra nginx -t, lỗi thì script tự khôi phục.
+   */
+  async apply_host_security(env) {
+    const settings = env.db.getHostSecurity();
+    const servers = env.db.listServers();
+    if (!servers.length) throw new AppError('Chưa có server nào');
+    const ranges = await fetchIpRanges({ mock: env.config.isMock });
+    const notes: string[] = [];
+    let failed = 0;
+    for (const server of servers) {
+      const domains = env.db.listSites().filter((x) => x.server_id === server.id && x.site_path).map((x) => x.domain);
+      const files = { http: buildNginxHttpConf(settings, ranges, server.ip), server: buildNginxServerConf(settings), fail2ban: buildFail2banConf(settings) };
+      const script = buildApplyScript(settings, files, domains);
+      const ssh = await env.services.sshFor(server);
+      try {
+        const r = await ssh.exec(`bash -s <<'AP_SCRIPT'\n${script}AP_SCRIPT`, { timeoutMs: 240_000 });
+        const out = `${r.stdout}\n${r.stderr}`;
+        const warn = out.match(/AP_WARN: [^\n]+/g)?.map((w) => w.replace('AP_WARN: ', '')) ?? [];
+        if (r.code !== 0 || !out.includes('AP_OK')) {
+          failed++;
+          const err = out.match(/AP_ERR: [\s\S]{0,400}/)?.[0] ?? out.slice(-400);
+          notes.push(`${server.name || server.ip}: LỖI ${err.trim()}`);
+          env.db.addLog({ level: 'error', step: 'security', message: `Áp dụng bảo mật hosting lên ${server.name || server.ip} thất bại: ${err.trim()}` });
+        } else {
+          notes.push(`${server.name || server.ip}: xong, ${domains.length} site${warn.length ? `, cảnh báo: ${warn.join('; ')}` : ''}`);
+          env.db.addLog({ level: 'info', step: 'security', message: `Áp dụng bảo mật hosting lên ${server.name || server.ip}: ${summarize(settings).join('; ') || 'tất cả tắt'}; ${domains.length} site; dải IP ${ranges.source === 'live' ? 'mới nhất' : 'dự phòng'}` });
+        }
+      } finally {
+        await ssh.close();
+      }
+    }
+    env.db.setHostSecurity({ ...env.db.getHostSecurity(), appliedAt: new Date().toISOString(), appliedNote: notes.join(' | ') });
+    if (failed) throw new AppError(`${failed}/${servers.length} server lỗi: ${notes.join(' | ')}`);
+    return { servers: servers.length, notes, ranges: ranges.source };
   },
 
   async health_check(env) {
@@ -305,6 +345,7 @@ export const JOB_LABELS: Record<string, string> = {
   rebuild_deploy: 'Dựng lại và đưa lên host',
   review_pages: 'Kiểm duyệt lại nội dung',
   apply_interview: 'Cập nhật Entity từ Bộ Câu Hỏi',
+  apply_host_security: 'Áp dụng bảo mật hosting',
   health_check: 'Kiểm tra sức khỏe',
   generate_post: 'Viết bài blog mới',
   regenerate_page: 'Sinh lại trang',

@@ -266,6 +266,8 @@ const hostSite: StepDef = {
       site = await panel.addSite({ domain, extraDomains: [`www.${domain}`], path: sitePath, phpVersion: server.php_version || '00', remark: ctx.site.brief.brandName });
     }
     ctx.updateSite({ panel_site_id: site.id, site_path: site.path || sitePath });
+    // Site mới cần dòng include bảo mật hosting trong conf Nginx của nó (nếu đã áp dụng lần nào)
+    if (ctx.db.getHostSecurity().appliedAt) ctx.db.enqueueJob('apply_host_security', null, null, { dedupe: true, maxAttempts: 1, runAt: new Date(Date.now() + 30_000).toISOString() });
     return { status: 'done', message: `aaPanel site #${site.id}, thư mục ${site.path || sitePath}`, output: { panelSiteId: site.id, path: site.path || sitePath } };
   },
 };
