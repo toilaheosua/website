@@ -56,6 +56,18 @@ export const VHOST_DIR = '/www/server/panel/vhost/nginx';
 export const FAIL2BAN_FILE = '/etc/fail2ban/jail.d/autopilot.local';
 const MARK = '# AUTOPILOT-SECURITY';
 const SERVER_INCLUDE = `include ${NGINX_SERVER_FILE}; ${MARK}`;
+/** Regex sed (BRE) khớp dòng include vhost trong nginx.conf và dòng server_name trong conf site */
+const VHOST_INCLUDE_RE = 'include \\/www\\/server\\/panel\\/vhost\\/nginx\\/\\*\\.conf;';
+const SERVER_NAME_RE = '^\\s*server_name .*;';
+
+/** Biểu thức sed: chèn `text` (thụt 4 khoảng) vào TRƯỚC lần khớp đầu tiên của regex. Dùng "|" làm dấu phân cách vì text có "#". */
+export function sedInsertBefore(re: string, text: string): string {
+  return `0,/${re}/s|${re}|${text}\\n    &|`;
+}
+/** Biểu thức sed: chèn `text` vào SAU lần khớp đầu tiên của regex. */
+export function sedInsertAfter(re: string, text: string): string {
+  return `0,/${re}/s|${re}|&\\n    ${text}|`;
+}
 const HTTP_INCLUDE = `include ${NGINX_HTTP_FILE}; ${MARK}`;
 
 function cleanList(items: string[]): string[] {
@@ -152,11 +164,11 @@ export function buildApplyScript(s: HostSecurity, files: { http: string; server:
   for (const c of siteConfs) lines.push(`[ -f ${shq(c)} ] && cp -f ${shq(c)} "$BK/$(basename ${shq(c)})" || true`);
   lines.push(heredoc(NGINX_HTTP_FILE, files.http), heredoc(NGINX_SERVER_FILE, files.server));
   // include mức http: đặt trước dòng include vhost (giữ tương thích aaPanel), chỉ thêm một lần
-  lines.push(`grep -q ${shq(MARK)} ${NGINX_MAIN_CONF} || sed -i ${shq(`0,/include \\/www\\/server\\/panel\\/vhost\\/nginx\\/\\*\\.conf;/s##${HTTP_INCLUDE}\\n    include /www/server/panel/vhost/nginx/*.conf;#`)} ${NGINX_MAIN_CONF}`);
+  lines.push(`grep -q ${shq(MARK)} ${NGINX_MAIN_CONF} || sed -i ${shq(sedInsertBefore(VHOST_INCLUDE_RE, HTTP_INCLUDE))} ${NGINX_MAIN_CONF}`);
   lines.push(`grep -q ${shq(MARK)} ${NGINX_MAIN_CONF} || { echo "AP_ERR: không tìm thấy dòng include vhost trong nginx.conf"; exit 2; }`);
   // include mức server vào từng site: sau dòng server_name đầu tiên
   for (const c of siteConfs) {
-    lines.push(`if [ -f ${shq(c)} ] && ! grep -q ${shq(MARK)} ${shq(c)}; then sed -i ${shq(`0,/^\\s*server_name .*;/s##&\\n    ${SERVER_INCLUDE}#`)} ${shq(c)}; fi`);
+    lines.push(`if [ -f ${shq(c)} ] && ! grep -q ${shq(MARK)} ${shq(c)}; then sed -i ${shq(sedInsertAfter(SERVER_NAME_RE, SERVER_INCLUDE))} ${shq(c)}; fi`);
   }
   if (!anyNginx) {
     // mọi công tắc Nginx đều tắt: gỡ include khỏi các site để cấu hình sạch
