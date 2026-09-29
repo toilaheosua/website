@@ -100,7 +100,7 @@ export function buildNginxHttpConf(s: HostSecurity, ranges: IpRanges, serverIp: 
   }
   if (s.hardenServer) {
     lines.push('# Chặn công cụ dò quét theo user-agent');
-    lines.push('map $http_user_agent $ap_bad_ua {', '  default 0;', '  "~*(sqlmap|nikto|nmap|masscan|zgrab|acunetix|nessus|wpscan|dirbuster|gobuster|ffuf|hydra|python-requests/|libwww-perl|curl/7\\.[0-4])" 1;', '}', 'server_tokens off;', '');
+    lines.push('map $http_user_agent $ap_bad_ua {', '  default 0;', '  "~*(sqlmap|nikto|nmap|masscan|zgrab|acunetix|nessus|wpscan|dirbuster|gobuster|ffuf|hydra|python-requests/|libwww-perl|curl/7\\.[0-4])" 1;', '}', '');
   }
   return lines.join('\n') + '\n';
 }
@@ -110,6 +110,8 @@ export function buildNginxServerConf(s: HostSecurity): string {
   const lines: string[] = [`${MARK} (tự sinh từ dashboard, đừng sửa tay)`];
   if (s.cloudflareOnly) lines.push('if ($ap_from_cf = 0) { return 403; }');
   if (s.hardenServer) {
+    // server_tokens đặt ở mức server: aaPanel đã có ở mức http, đặt trùng mức là nginx -t lỗi
+    lines.push('server_tokens off;');
     lines.push('if ($ap_bad_ua) { return 403; }');
     lines.push('if ($request_method !~ ^(GET|HEAD|POST|OPTIONS)$) { return 405; }');
   }

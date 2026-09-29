@@ -30,7 +30,8 @@ describe('bảo mật hosting: sinh cấu hình', () => {
     expect(http).toContain('66.249.64.0/19 1;');
     expect(http).toContain('limit_req_zone $ap_limit_key zone=ap_req:10m rate=10r/s;');
     expect(http).toContain('zone=ap_404:10m rate=30r/m;');
-    expect(http).toContain('server_tokens off;');
+    expect(http).not.toContain('server_tokens off;');
+    expect(buildNginxServerConf(s)).toContain('server_tokens off;');
     expect(http).not.toContain('$ap_from_cf');
     const server = buildNginxServerConf(s);
     expect(server).toContain('location ~* \\.(env|git|svn|htaccess|htpasswd|ini|log|sh|sql|bak|old|swp|conf|yml|yaml|pem|key)$ { deny all; return 404; }');
