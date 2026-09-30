@@ -208,11 +208,11 @@ export abstract class BaseContentLlm implements ContentLlm {
     return articleFromLlm(out, input.keyword, input.outline);
   }
 
-  async patchArticle(input: LlmRunContext & { notes: ResearchNotes; outline: Outline; article: Article; targets: PatchTarget[]; round: number }): Promise<ArticlePatch[]> {
+  async patchArticle(input: LlmRunContext & { notes: ResearchNotes; outline: Outline; article: Article; targets: PatchTarget[]; hints: string[]; round: number }): Promise<ArticlePatch[]> {
     const out = await this.structured(LlmPatchSchema, {
       model: this.models.writerModel,
       system: [WRITER_RULES, runContextBlock({ keyword: input.keyword, options: input.options, settings: input.settings, notes: input.notes, outline: input.outline })],
-      user: patchPrompt({ article: input.article, targets: input.targets, round: input.round, options: input.options }),
+      user: patchPrompt({ article: input.article, targets: input.targets, hints: input.hints, round: input.round, options: input.options }),
       maxTokens: 24000,
       label: `Sửa đúng chỗ vòng ${input.round}`,
       temperature: this.models.temperature,
@@ -220,15 +220,20 @@ export abstract class BaseContentLlm implements ContentLlm {
     return out.patches.map((p) => ({ where: p.where.trim(), heading: p.heading, text: p.text }));
   }
 
-  /** Nhiệt độ 0 để cùng một bài cho cùng một kết quả duyệt, không nhảy số giữa các vòng. */
+  /**
+   * Nhiệt độ thấp để kết quả duyệt ổn định giữa các vòng, nhưng không đặt 0: model rẻ ở nhiệt độ 0 dễ rơi vào
+   * vòng lặp chữ cho tới khi chạm trần token (đã gặp với DeepSeek flash, 27 phút rồi bị cắt). Kết quả duyệt chỉ là
+   * danh sách lỗi ngắn nên trần ra nhỏ và mức suy nghĩ thấp; bị cắt là do lặp, không phải thiếu chỗ.
+   */
   async reviewArticle(input: LlmRunContext & { notes: ResearchNotes; outline: Outline; article: Article }): Promise<AiReview> {
     return this.structured(LlmReviewSchema, {
       model: this.models.writerModel,
       system: [REVIEWER_RULES, runContextBlock({ keyword: input.keyword, options: input.options, settings: input.settings, notes: input.notes, outline: input.outline })],
       user: reviewPrompt({ article: articleToLlm(input.article) as unknown as Article, options: input.options }),
-      maxTokens: 20000,
+      maxTokens: 10000,
       label: 'AI duyệt bài',
-      temperature: 0,
+      temperature: 0.2,
+      reasoning: 'low',
     });
   }
 

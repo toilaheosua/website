@@ -351,7 +351,8 @@ export function qualityLimits(db: Db, run: Run): QualityLimits {
     // Các mục quán phải khác nhau về câu mở đầu và cụm khen: tên quán lấy từ danh sách đã chọn
     const places = db.getArtifact<PlacesData>(run.id, 'places')?.content ?? null;
     const distinct = places ? { names: featuredPlaces(places).map((p) => p.name), dish: places.dish } : undefined;
-    return { minWords: options.minWords, maxWords: options.maxWords, maxH2: run.options.placesCount + 6, bannedPatterns: ROUNDUP_BANNED, ...(distinct ? { distinctSections: distinct } : {}) };
+    const featuredCount = places ? featuredPlaces(places).length : run.options.placesCount;
+    return { minWords: options.minWords, maxWords: options.maxWords, maxH2: featuredCount + 6, bannedPatterns: ROUNDUP_BANNED, ...(distinct ? { distinctSections: distinct } : {}) };
   }
   return { minWords: options.minWords, maxWords: options.maxWords, ...(k === 'brand' ? { bannedPatterns: ROUNDUP_BANNED } : {}) };
 }
@@ -473,7 +474,16 @@ async function stepVerify(ctx: StepContext): Promise<StepResult> {
     let droppedReview = 0;
     if (pending) review = pending.review!;
     else {
-      const raw = await ctx.llm.reviewArticle({ keyword: run.keyword, options, settings, notes, outline, article });
+      // AI duyệt chỉ là một trong ba nguồn kiểm tra: model lỗi (bị cắt, JSON hỏng, hết credit tạm) thì vòng này
+      // bỏ qua AI duyệt và ghi log, không để cả bước kiểm tra đổ sau nửa giờ chờ
+      let raw: AiReview;
+      try {
+        raw = await ctx.llm.reviewArticle({ keyword: run.keyword, options, settings, notes, outline, article });
+      } catch (err) {
+        if ((err instanceof AppError && err.code === 'cancelled') || err instanceof ConfigError) throw err;
+        ctx.log(`Vòng ${round}: AI duyệt không chạy được (${errorMessage(err)}). Bỏ qua AI duyệt ở vòng này, kiểm tra bằng cổng chất lượng và so trùng.`, 'warn');
+        raw = { pass: true, summary: `AI duyệt không chạy được ở vòng này: ${errorMessage(err).slice(0, 200)}`, issues: [] };
+      }
       const verified = verifyReviewIssues(raw, article);
       droppedReview = verified.dropped;
       const majors = verified.review.issues.filter((i) => i.severity === 'major');
@@ -552,9 +562,9 @@ async function stepVerify(ctx: StepContext): Promise<StepResult> {
     const located = locateTargets(article, { quality, dup, review, blocks: ai.blocks, minWords: limits.minWords, maxWords: limits.maxWords, shingleSize: k });
     if (located.targets.length && !located.unlocated.length) {
       // Sửa đúng chỗ: chỉ các phần bị lỗi đi qua model, phần còn lại giữ nguyên từng chữ
-      const patches = await ctx.llm.patchArticle({ keyword: run.keyword, options, settings, notes, outline, article, targets: located.targets, round });
+      const patches = await ctx.llm.patchArticle({ keyword: run.keyword, options, settings, notes, outline, article, targets: located.targets, hints: located.hints, round });
       article = finalizeArticle(ctx, applyPatches(article, patches, located.targets));
-      ctx.log(`Vòng ${round}: sửa đúng ${located.targets.length} chỗ (${located.targets.map((t) => t.where).join(', ')}), phần còn lại giữ nguyên.`);
+      ctx.log(`Vòng ${round}: sửa đúng ${located.targets.length} chỗ (${located.targets.map((t) => t.where).join(', ')}), phần còn lại giữ nguyên${located.hints.length ? `; ${located.hints.length} gợi ý chung kèm theo` : ''}.`);
     } else {
       if (located.unlocated.length) ctx.log(`Vòng ${round}: ${located.unlocated.length} lỗi không khoanh được vị trí (${located.unlocated.map((u) => u.slice(0, 80)).join(' | ')}), sửa cả bài.`, 'warn');
       const flagged = ai.blocks

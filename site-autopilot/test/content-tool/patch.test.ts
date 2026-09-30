@@ -87,6 +87,15 @@ describe('khoanh vùng lỗi để sửa đúng chỗ', () => {
     expect(by['sections.2']!.feedback.some((f) => /giống văn máy/.test(f))).toBe(true);
   });
 
+  it('lỗi "nên" toàn bài (nhiều mục H2) chỉ là gợi ý chung, dấu chấm phẩy khoanh đúng phần có dấu', () => {
+    const a = article();
+    a.sections[2]!.body += ' Câu có dấu; chấm phẩy.';
+    const r = locateTargets(a, { quality: [{ code: 'many_sections', severity: 'minor', where: 'sections', message: '15 mục H2, nên gộp còn 4 đến 7' }, { code: 'semicolon', severity: 'minor', where: 'article', message: 'Có dấu chấm phẩy, nên tách câu' }], dup: dupEmpty, review: null, blocks: [], minWords: 200, maxWords: 3000, shingleSize: 5 });
+    expect(r.unlocated).toEqual([]);
+    expect(r.hints).toEqual(['[nên] 15 mục H2, nên gộp còn 4 đến 7']);
+    expect(r.targets.map((t) => t.where)).toEqual(['sections.2']);
+  });
+
   it('lỗi không quy được vị trí (thiếu mục) trả về unlocated để lùi về sửa cả bài', () => {
     const a = article();
     const { targets, unlocated } = locateTargets(a, { quality: [{ code: 'few_sections', severity: 'major', where: 'sections', message: 'Chỉ có 2 mục H2' }], dup: dupEmpty, review: { pass: false, summary: '', issues: [{ severity: 'major', where: 'sections', problem: 'Thiếu mục quán C', fix: 'Thêm', quote: '', confirmed: true }] }, blocks: [], minWords: 200, maxWords: 3000, shingleSize: 5 });

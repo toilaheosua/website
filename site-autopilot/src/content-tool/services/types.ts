@@ -146,7 +146,7 @@ export interface ContentLlm {
   /** Vòng sửa có mục tiêu: chỉ viết lại các đoạn bị đánh dấu, giữ phần còn lại. */
   fixArticle(input: LlmRunContext & { notes: ResearchNotes; outline: Outline; article: Article; feedback: string[]; flaggedTexts: string[]; round: number }): Promise<Article>;
   /** Vòng sửa có mục tiêu: chỉ nhận và trả về các phần bị lỗi, phần còn lại mã giữ nguyên. */
-  patchArticle(input: LlmRunContext & { notes: ResearchNotes; outline: Outline; article: Article; targets: PatchTarget[]; round: number }): Promise<ArticlePatch[]>;
+  patchArticle(input: LlmRunContext & { notes: ResearchNotes; outline: Outline; article: Article; targets: PatchTarget[]; hints: string[]; round: number }): Promise<ArticlePatch[]>;
   /** AI duyệt kiểm chứng dữ kiện, nhiệt độ 0, mỗi lỗi kèm câu trích. */
   reviewArticle(input: LlmRunContext & { notes: ResearchNotes; outline: Outline; article: Article }): Promise<AiReview>;
   translateKeyword(keyword: string): Promise<string>;

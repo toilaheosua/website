@@ -361,7 +361,7 @@ export class MockLlm implements ContentLlm {
     };
   }
 
-  async patchArticle(input: LlmRunContext & { notes: ResearchNotes; outline: Outline; article: Article; targets: PatchTarget[]; round: number }): Promise<ArticlePatch[]> {
+  async patchArticle(input: LlmRunContext & { notes: ResearchNotes; outline: Outline; article: Article; targets: PatchTarget[]; hints: string[]; round: number }): Promise<ArticlePatch[]> {
     await sleep(MOCK_DELAY * 2);
     this.bump('mock-writer', 6000, 2000);
     const strip = (t: string) => t.replace(/\s*MOCK_AI_HIGH[^.]*\./g, '');

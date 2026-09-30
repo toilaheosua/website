@@ -374,13 +374,14 @@ export function reviewPrompt(input: { article: Article; options: RunOptions }): 
 }
 
 /** Vòng sửa có mục tiêu: chỉ các phần bị lỗi, phần còn lại giữ nguyên bằng mã. */
-export function patchPrompt(input: { article: Article; targets: PatchTarget[]; round: number; options: RunOptions }): string {
+export function patchPrompt(input: { article: Article; targets: PatchTarget[]; hints?: string[]; round: number; options: RunOptions }): string {
   const a = input.article;
   const lines: string[] = [];
   lines.push(`VÒNG SỬA ${input.round}, SỬA ĐÚNG CHỖ. Chỉ viết lại ${input.targets.length} phần liệt kê dưới đây theo lỗi đã nêu. Phần còn lại của bài được giữ nguyên bằng mã, bạn không cần và không được trả lại.`);
   lines.push('', `Bài: title "${a.title}", H1 "${a.h1}", từ khóa "${a.targetKeyword}". Các mục của bài để giữ mạch: ${a.sections.map((s, i) => `sections.${i} "${s.heading}"`).join('; ')}.`);
   lines.push('', 'NGUYÊN TẮC: giữ toàn bộ dữ kiện đúng, không thêm dữ kiện ngoài ghi chú; markdown đơn giản, tuyệt đối không thẻ HTML; giữ nguyên các dòng bắt đầu bằng "**Địa chỉ:**", "**Giờ mở cửa:**", "**Liên hệ:**", "**Đánh giá:**", dòng ảnh "![" và các bảng "|" (chỉ sửa chữ trong ô nếu được yêu cầu); không dùng cụm bị cấm, không liên từ sáo mở đầu đoạn; xen câu ngắn với câu dài; giữ ngôi kể và kiểu viết; tôn trọng số từ yêu cầu của từng phần; heading chỉ đổi khi lỗi nói về heading, còn lại để heading rỗng.');
   if (input.options.kind === 'roundup') lines.push('Bài tổng hợp quán: không kể trải nghiệm cá nhân ở quán không có ghi chú của người đặt bài; không nói về việc thiếu dữ liệu.');
+  if (input.hints?.length) lines.push('', 'GỢI Ý CHUNG (không bắt buộc, áp dụng trong các phần đang sửa nếu hợp):', ...input.hints.map((h) => `- ${h}`));
   for (const t of input.targets) {
     lines.push('', `=== ${t.where}${t.heading ? ` (heading: "${t.heading}")` : ''} ===`);
     lines.push('LỖI CẦN SỬA:', ...t.feedback.map((f) => `- ${f}`));

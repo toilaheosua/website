@@ -107,9 +107,10 @@ const quoted = (s: string): string[] => [...s.matchAll(/"([^"]{4,})"/g)].map((m)
  * phần chứa cụm đó; thiếu từ khóa → mở bài. Lỗi không quy được (ví dụ thiếu mục) trả trong unlocated để
  * bước gọi lùi về sửa cả bài.
  */
-export function locateTargets(a: Article, input: LocateInput): { targets: PatchTarget[]; unlocated: string[] } {
+export function locateTargets(a: Article, input: LocateInput): { targets: PatchTarget[]; unlocated: string[]; hints: string[] } {
   const map = new Map<string, PatchTarget>();
-  const unlocated: string[] = [];
+  const unlocatedAll: string[] = [];
+  const unlocated = unlocatedAll;
   const parts = patchableParts(a);
   const add = (where: string, fb: string, opts: { allowHeading?: boolean } = {}) => {
     if (!isPatchable(a, where)) {
@@ -169,6 +170,10 @@ export function locateTargets(a: Article, input: LocateInput): { targets: PatchT
       case 'keyword_missing':
         add('intro', fb);
         break;
+      case 'semicolon':
+        // Dấu chấm phẩy: sửa ở đúng các phần có dấu đó
+        for (const p of parts) if (/;/.test(p.text)) add(p.where, fb);
+        break;
       default:
         unlocated.push(fb);
     }
@@ -193,7 +198,8 @@ export function locateTargets(a: Article, input: LocateInput): { targets: PatchT
   for (const [where, texts] of byWhere) {
     add(where, `[BẮT BUỘC] Các câu sau bị chấm là đọc giống văn máy, viết lại từng câu hoàn toàn khác (đổi cấu trúc, độ dài, giọng kể có người viết), và đổi luôn câu kề bên nếu cùng nhịp: ${texts.map((t) => `"${t.slice(0, 160)}"`).join('; ')}`);
   }
-  return { targets: [...map.values()], unlocated };
+  // Lỗi bắt buộc không khoanh được thì bước gọi phải sửa cả bài; lỗi "nên" không khoanh được chỉ là gợi ý chung
+  return { targets: [...map.values()], unlocated: unlocatedAll.filter((f) => f.startsWith('[BẮT BUỘC]')), hints: unlocatedAll.filter((f) => !f.startsWith('[BẮT BUỘC]')) };
 }
 
 /** Ghép bản sửa vào bài: chỉ nhận đúng các phần đã yêu cầu, heading chỉ đổi khi phần đó được phép. */
