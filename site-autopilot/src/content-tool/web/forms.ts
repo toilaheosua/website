@@ -1,6 +1,6 @@
 import { GeneralSettingsSchema, RunOptionsSchema, type Article, type GeneralSettings, type Outline, type OutlineSection, type PlacesData, type RunOptions } from '../core/types.js';
 import { parseList } from '../core/util.js';
-import { titleCaseWords } from '../core/roundup.js';
+import { renumberPlaces, titleCaseWords } from '../core/roundup.js';
 
 export type FormBody = Record<string, string | File | (string | File)[]>;
 
@@ -249,7 +249,7 @@ export function parsePlacesForm(body: FormBody, cur: PlacesData): PlacesData {
     const eligible = !p.excludedReason;
     return { ...p, featured: eligible ? bool(body, `p${i}_featured`) : false, userNote: note };
   });
-  return { ...cur, candidates };
+  return renumberPlaces({ ...cur, candidates });
 }
 
 export function parseArticleForm(body: FormBody, cur: Article): Article {

@@ -4,7 +4,7 @@ import type { PlaceRole, PlacesData } from './types.js';
 import type { RawPlace } from '../services/types.js';
 import { AppError } from './errors.js';
 import { errorMessage, normText, nowIso } from './util.js';
-import { applyPlaceRoles, buildPlaces, buildRoundupNotes, featuredPlaces, heuristicClassify, photoFileName, placeForRole, splitKeyword, titleCaseWords } from './roundup.js';
+import { applyPlaceRoles, buildPlaces, buildRoundupNotes, featuredPlaces, heuristicClassify, photoFileName, placeForRole, renumberPlaces, splitKeyword, titleCaseWords } from './roundup.js';
 import { requireArtifact, throwIfCancelled, type StepContext, type StepResult } from './pipeline.js';
 
 /**
@@ -82,7 +82,7 @@ export async function stepPlaces(ctx: StepContext): Promise<StepResult> {
 
 export async function stepReviewsAndPhotos(ctx: StepContext): Promise<StepResult> {
   const { run, db, settings, config } = ctx;
-  const data = requireArtifact<PlacesData>(ctx, 'places', 'danh sách quán');
+  const data = renumberPlaces(requireArtifact<PlacesData>(ctx, 'places', 'danh sách quán'));
   const featured = featuredPlaces(data);
   if (!featured.length) throw new AppError('Chưa chọn quán nào vào bài. Tick chọn quán ở tab Quán rồi chạy lại.');
   const maps = ctx.services.maps();

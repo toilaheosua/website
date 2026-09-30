@@ -293,6 +293,19 @@ export function applyPlaceNotes(candidates: PlaceInfo[], text: string): void {
   }
 }
 
+/**
+ * Đánh lại số thứ tự sau khi người dùng chọn tay: quán được chọn xếp 1..n theo điểm (đúng số trong heading,
+ * bảng, JSON-LD và tên ảnh), quán đủ điều kiện nhưng không chọn xếp tiếp sau, quán bị loại giữ 0.
+ * Trước đây số thứ tự là hạng theo điểm trong toàn danh sách nên bỏ quán hạng 2 thì bài có "1., 3., 4.".
+ */
+export function renumberPlaces(data: PlacesData): PlacesData {
+  const eligible = data.candidates.filter((p) => !p.excludedReason).sort((a, b) => b.score - a.score || b.reviews - a.reviews || b.rating - a.rating);
+  let n = 0;
+  for (const p of eligible) if (p.featured) p.rank = ++n;
+  for (const p of eligible) if (!p.featured) p.rank = ++n;
+  return data;
+}
+
 export function featuredPlaces(data: PlacesData): PlaceInfo[] {
   return data.candidates.filter((p) => p.featured && !p.excludedReason).sort((a, b) => a.rank - b.rank);
 }

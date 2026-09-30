@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addressInArea, applyPlaceRoles, heuristicRoles, buildPlaces, distanceKm, distinctiveName, enforcePlaceSections, formatOperatingHours, formatPhone, headingMatches, heuristicClassify, normalizeGroupKey, normalizePrice, parsePlaceNotes, splitKeyword, stripInjectedLines, titleCaseWords } from '../../src/content-tool/core/roundup.js';
+import { addressInArea, applyPlaceRoles, heuristicRoles, buildPlaces, distanceKm, distinctiveName, enforcePlaceSections, featuredPlaces, formatOperatingHours, formatPhone, headingMatches, heuristicClassify, normalizeGroupKey, normalizePrice, parsePlaceNotes, renumberPlaces, splitKeyword, stripInjectedLines, titleCaseWords } from '../../src/content-tool/core/roundup.js';
 import { checkSectionRepeats } from '../../src/content-tool/generator/quality.js';
 import type { Article, PlacesData } from '../../src/content-tool/core/types.js';
 import type { RawPlace } from '../../src/content-tool/services/types.js';
@@ -266,5 +266,26 @@ describe('vai riêng của từng quán và kiểm tra mục quán không trùng
     // Ba mục mở đầu khác nhau, không cụm chung thì không lỗi
     const ok = { ...a, sections: [a.sections[0]!, sec('1. Bánh canh Nhường', 'Hơn hai nghìn lượt đánh giá mà vẫn giữ 4,2 sao, quán này đông nhất danh sách.'), sec('2. Hủ tiếu Ông Giáo', 'Sao cao nhất, 4,8 sau 320 lượt. Tô khô tương đen được nhắc nhiều.'), sec('3. Hủ tiếu Đêm', 'Mở tới một giờ sáng, chỗ duy nhất bán khuya trong danh sách này.')] };
     expect(checkSectionRepeats(ok, [1, 2, 3], 'hủ tiếu')).toEqual([]);
+  });
+});
+
+describe('số thứ tự sau khi chọn tay', () => {
+  it('bỏ chọn quán hạng 2 thì các quán được chọn đánh lại 1..n, quán bỏ chọn xếp sau', () => {
+    const list: RawPlace[] = ['A', 'B', 'C', 'D', 'E'].map((n, i) => raw(i + 1, { title: `Hủ tiếu ${n}`, rating: 4.8 - i * 0.1, reviews: 1000 - i * 100 }));
+    const cls = list.map((_r, i) => ({ index: i + 1, matchesDish: true, inArea: true, groupKey: '' }));
+    const data = { candidates: buildPlaces({ raw: list, classes: cls, dish: 'hủ tiếu', area: 'Phan Rang', minReviews: 5, bayesM: 30, featuredCount: 5, userNotes: '', minRating: 3.5 }).candidates } as unknown as PlacesData;
+    const byName = (n: string) => data.candidates.find((p) => p.name === `Hủ tiếu ${n}`)!;
+    expect(featuredPlaces(data).map((p) => p.rank)).toEqual([1, 2, 3, 4, 5]);
+    byName('B').featured = false;
+    byName('D').featured = false;
+    renumberPlaces(data);
+    expect(featuredPlaces(data).map((p) => [p.name, p.rank])).toEqual([['Hủ tiếu A', 1], ['Hủ tiếu C', 2], ['Hủ tiếu E', 3]]);
+    expect(byName('B').rank).toBe(4);
+    expect(byName('D').rank).toBe(5);
+    // Chọn lại thì về đúng hạng theo điểm
+    byName('B').featured = true;
+    byName('D').featured = true;
+    renumberPlaces(data);
+    expect(featuredPlaces(data).map((p) => p.name)).toEqual(['Hủ tiếu A', 'Hủ tiếu B', 'Hủ tiếu C', 'Hủ tiếu D', 'Hủ tiếu E']);
   });
 });

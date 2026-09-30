@@ -1889,7 +1889,7 @@ function PlacesTab(p: RunDetailProps) {
   if (!d) return <div class="card muted">Chưa có danh sách quán. Bước "Tìm quán trên Maps" chưa chạy.</div>;
   const waiting = p.run.status === 'waiting_places';
   const busy = p.run.status === 'queued' || p.run.status === 'running';
-  const eligible = d.candidates.filter((x) => !x.excludedReason);
+  const eligible = d.candidates.filter((x) => !x.excludedReason).sort((a, b) => a.rank - b.rank);
   const excluded = d.candidates.filter((x) => x.excludedReason);
   const featuredCount = eligible.filter((x) => x.featured).length;
   return (
@@ -1906,7 +1906,7 @@ function PlacesTab(p: RunDetailProps) {
           `<script>(function(){var f=document.getElementById('places-form');var live=document.getElementById('featured-live');var tag=document.getElementById('featured-unsaved');var picked=document.getElementById('featured-picked');if(!f||!live)return;var saved=${featuredCount};function upd(){var n=f.querySelectorAll('input[name$="_featured"]:checked').length;live.textContent=String(n);if(picked)picked.textContent=String(n);if(tag)tag.style.display=n===saved?'none':'inline-block';}f.addEventListener('change',function(e){if(e.target&&/_featured$/.test(e.target.name||''))upd();});upd();})();</script>`,
         )}
         <p class="hint">
-          Tìm "{d.query}" trên Google Maps, {d.pagesFetched} trang. Điểm xếp hạng = (sao đã hiệu chỉnh trừ sàn {d.minRating ?? 3.5}) × độ tin cậy theo số lượt (10 lượt = 1, 100 = 2, 1.000 = 3); m = {d.bayesM}, sao trung bình nhóm {d.meanRating.toFixed(2)}, ngưỡng {d.minReviews} đánh giá. Cùng số lượt, quán 4,6 sao được gần gấp đôi quán 4,1 sao. Tick để chọn quán vào bài; ghi chú trải nghiệm thật của bạn ở cột cuối, chỉ quán có ghi chú mới được kể ở ngôi thứ nhất.
+          Tìm "{d.query}" trên Google Maps, {d.pagesFetched} trang. Điểm xếp hạng = (sao đã hiệu chỉnh trừ sàn {d.minRating ?? 3.5}) × độ tin cậy theo số lượt (10 lượt = 1, 100 = 2, 1.000 = 3); m = {d.bayesM}, sao trung bình nhóm {d.meanRating.toFixed(2)}, ngưỡng {d.minReviews} đánh giá. Cùng số lượt, quán 4,6 sao được gần gấp đôi quán 4,1 sao. Tick để chọn quán vào bài; số thứ tự là số trong bài (quán được chọn xếp 1, 2, 3... theo điểm, quán bỏ chọn xếp sau), đánh lại mỗi lần lưu hoặc duyệt. Ghi chú trải nghiệm thật của bạn ở cột cuối, chỉ quán có ghi chú mới được kể ở ngôi thứ nhất.
         </p>
         <table>
           <thead>
