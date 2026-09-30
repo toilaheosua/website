@@ -126,6 +126,79 @@ describe('Tool Viết Content gộp trong bot', () => {
     await worker.drain(30_000);
     expect(db.listPages(id).some((p) => p.slug === 'blog/cach-nau-nuoc-leo-trong')).toBe(true);
     expect(db.listToolRuns(id)).toHaveLength(2);
+
+    // Nút Sửa cài đặt nổi bật trên trang Viết content
+    const toolHome2 = await (await app.request('/content', { headers: { cookie } })).text();
+    expect(toolHome2).toMatch(/<a class="btn accent lg" href="\/content\/settings">[\s\S]*?Sửa cài đặt/);
+
+    // Bài viết rời trong tool (không gắn site) → tab Bài viết có nút Đăng bài, không còn nút sao chép
+    const created = await app.request('/runs', { method: 'POST', body: new URLSearchParams({ kind: 'web', keyword: 'Hủ tiếu gõ Phan Rang' }), headers: { cookie, 'Content-Type': 'application/x-www-form-urlencoded' } });
+    expect(created.status).toBe(302);
+    const loose = bridge.db.listRuns(50).find((r) => r.keyword === 'Hủ tiếu gõ Phan Rang')!;
+    await bridge.worker.runToCompletion(loose.id, 120_000);
+    expect(bridge.db.getRun(loose.id)?.status).toMatch(/done|needs_review/);
+    const articleTab = await (await app.request(`/runs/${loose.id}?tab=article`, { headers: { cookie } })).text();
+    expect(articleTab).not.toContain('Sao chép Markdown');
+    expect(articleTab).not.toContain('Sao chép HTML');
+    expect(articleTab).toContain(`action="/content/runs/${loose.id}/publish"`);
+    expect(articleTab).toContain(`name="siteId" value="${id}"`); // một site duy nhất: chọn sẵn
+    expect(articleTab).toContain('Đăng bài');
+
+    // Đăng bài → bài nháp (chưa công khai) trên site, chuyển tới trang bài để sửa tiêu đề, URL
+    const pub = await app.request(`/content/runs/${loose.id}/publish`, { method: 'POST', body: new URLSearchParams({ siteId: String(id) }), headers: { cookie, 'Content-Type': 'application/x-www-form-urlencoded' } });
+    expect(pub.status).toBe(302);
+    const draftRow = db.getToolRun(loose.id)!;
+    expect(draftRow.status).toBe('imported');
+    expect(pub.headers.get('location')).toBe(`/sites/${id}/pages/${draftRow.imported_page_id}`);
+    const draft = db.getPage(draftRow.imported_page_id!)!;
+    expect(draft.status).toBe('needs_review');
+    expect(draft.review?.summary).toMatch(/Bài nháp từ Tool Viết Content/);
+    expect(draft.review?.approvedBy).toBeUndefined();
+    const pageHtml = await (await app.request(`/sites/${id}/pages/${draft.id}`, { headers: { cookie } })).text();
+    expect(pageHtml).toContain('Bài nháp, chưa công khai');
+    expect(pageHtml).toContain('Duyệt và đăng');
+    expect(pageHtml).toContain(`name="slug" value="${draft.slug}"`);
+    // Tab Bài viết giờ dẫn tới bài trên site thay cho nút Đăng bài
+    const articleTab2 = await (await app.request(`/runs/${loose.id}?tab=article`, { headers: { cookie } })).text();
+    expect(articleTab2).toContain('Đã đăng vào bridge.test');
+    expect(articleTab2).toContain(`href="/sites/${id}/pages/${draft.id}"`);
+    expect(articleTab2).not.toContain(`action="/content/runs/${loose.id}/publish"`);
+    // Đăng lần nữa chỉ chuyển tới bài đã có
+    const again = await app.request(`/content/runs/${loose.id}/publish`, { method: 'POST', body: new URLSearchParams({ siteId: String(id) }), headers: { cookie, 'Content-Type': 'application/x-www-form-urlencoded' } });
+    expect(again.headers.get('location')).toBe(`/sites/${id}/pages/${draft.id}`);
+    // Người dùng duyệt → bài công khai, xếp dựng lại
+    const ok = await app.request(`/sites/${id}/pages/${draft.id}/approve`, { method: 'POST', headers: { cookie } });
+    expect(ok.status).toBe(302);
+    expect(db.getPage(draft.id)?.status).toBe('published');
+    expect(db.getPage(draft.id)?.review?.approvedBy).toBe('user');
+
+    // Bài tổng hợp quán dừng chờ duyệt: nút Duyệt gửi đúng các ô đang tích, không cần bấm Lưu trước
+    const roundupRes = await app.request('/runs', { method: 'POST', body: new URLSearchParams({ kind: 'roundup', dish: 'bánh canh', area: 'Phan Rang', placesCount: '6', reviewPlaces: 'on' }), headers: { cookie, 'Content-Type': 'application/x-www-form-urlencoded' } });
+    expect(roundupRes.status).toBe(302);
+    const roundup = bridge.db.listRuns(50).find((r) => r.options.kind === 'roundup')!;
+    await bridge.worker.runToCompletion(roundup.id, 120_000);
+    expect(bridge.db.getRun(roundup.id)?.status).toBe('waiting_places');
+    const overview = await (await app.request(`/runs/${roundup.id}`, { headers: { cookie } })).text();
+    expect(overview).toContain(`href="/runs/${roundup.id}?tab=places"`);
+    expect(overview).toContain('Chọn quán và duyệt');
+    expect(overview).not.toContain(`action="/runs/${roundup.id}/approve"`);
+    const placesTab = await (await app.request(`/runs/${roundup.id}?tab=places`, { headers: { cookie } })).text();
+    expect(placesTab).toContain('form="places-form"');
+    expect(placesTab).toContain('Duyệt các quán đang tích và viết bài');
+    expect(placesTab).not.toContain(`action="/runs/${roundup.id}/approve"`);
+    // Tick hai quán đầu rồi bấm Duyệt: chỉ hai quán đó vào bài
+    const cands = bridge.db.getArtifact<{ candidates: { excludedReason?: string; featured: boolean }[] }>(roundup.id, 'places')!.content.candidates;
+    const eligibleIdx = cands.map((p, i) => (p.excludedReason ? -1 : i)).filter((i) => i >= 0);
+    expect(eligibleIdx.length).toBeGreaterThan(2);
+    const form = new URLSearchParams({ action: 'approve' });
+    form.set(`p${eligibleIdx[0]}_featured`, 'on');
+    form.set(`p${eligibleIdx[1]}_featured`, 'on');
+    const approved = await app.request(`/runs/${roundup.id}/places`, { method: 'POST', body: form, headers: { cookie, 'Content-Type': 'application/x-www-form-urlencoded' } });
+    expect(approved.status).toBe(302);
+    const saved = bridge.db.getArtifact<{ candidates: { excludedReason?: string; featured: boolean }[] }>(roundup.id, 'places')!.content.candidates;
+    expect(saved.filter((p) => p.featured && !p.excludedReason)).toHaveLength(2);
+    await bridge.worker.runToCompletion(roundup.id, 120_000);
+    expect(bridge.db.getRun(roundup.id)?.status).toMatch(/done|needs_review/);
     bridge.stop();
-  }, 180_000);
+  }, 300_000);
 });

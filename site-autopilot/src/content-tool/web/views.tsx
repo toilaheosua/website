@@ -166,8 +166,9 @@ export function HomePage(props: { runs: Run[]; settings: GeneralSettings; integ:
             <dt>Vòng sửa</dt>
             <dd>{s.maxFixRounds}</dd>
           </dl>
-          <p style="margin-top:12px">
-            <a class="btn secondary sm" href="/content/settings">
+          <p style="margin-top:14px">
+            <a class="btn accent lg" href="/content/settings">
+              {ICO_GEAR}
               Sửa cài đặt
             </a>
           </p>
@@ -410,7 +411,16 @@ export interface RunDetailProps {
   /** Các bài đang chiếm chỗ trong worker và số chỗ */
   activeRuns: number[];
   concurrency: number;
+  /** Site của bot có thể đăng bài vào; rỗng khi chạy rời */
+  publishSites: { id: number; domain: string }[];
+  /** Site đã gắn với lần chạy này; pageId có khi bài đã tạo trên site */
+  published: { siteId: number; domain: string; pageId: number | null } | null;
 }
+
+/* Biểu tượng nhỏ trong nút (SVG nét, tô theo màu chữ) */
+const ICO_GEAR = raw('<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>');
+const ICO_UPLOAD = raw('<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>');
+const ICO_CHECK = raw('<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>');
 
 export function RunDetail(p: RunDetailProps) {
   const { run } = p;
@@ -428,12 +438,27 @@ export function RunDetail(p: RunDetailProps) {
         </div>
         <div class="actions">
           <Badge status={run.status} label={RUN_STATUS_LABEL[run.status]} />
-          {run.status === 'waiting_outline' || run.status === 'waiting_places' ? (
-            <form method="post" action={`/runs/${run.id}/approve`} class="inline">
-              <button class="btn sm" type="submit">
-                {run.status === 'waiting_places' ? 'Duyệt danh sách quán và viết bài' : 'Duyệt bố cục và viết bài'}
+          {run.status === 'waiting_places' ? (
+            p.tab === 'places' ? (
+              <button class="btn sm" type="submit" form="places-form" name="action" value="approve">
+                Duyệt các quán đang tích và viết bài
               </button>
-            </form>
+            ) : (
+              <a class="btn sm" href={`/runs/${run.id}?tab=places`}>
+                Chọn quán và duyệt
+              </a>
+            )
+          ) : null}
+          {run.status === 'waiting_outline' ? (
+            p.tab === 'outline' ? (
+              <button class="btn sm" type="submit" form="outline-form" name="action" value="approve">
+                Duyệt bố cục này và viết bài
+              </button>
+            ) : (
+              <a class="btn sm" href={`/runs/${run.id}?tab=outline`}>
+                Xem bố cục và duyệt
+              </a>
+            )
           ) : null}
           {busy ? (
             <form method="post" action={`/runs/${run.id}/cancel`} class="inline">
@@ -459,12 +484,12 @@ export function RunDetail(p: RunDetailProps) {
       ) : null}
       {run.status === 'waiting_places' ? (
         <div class="alert warn">
-          Đã xếp hạng quán. Chọn quán và ghi chú trải nghiệm của bạn ở tab <a href={`/runs/${run.id}?tab=places`}>Quán</a>, rồi bấm "Lưu, duyệt và viết bài".
+          Đã xếp hạng quán. Tick chọn quán và ghi chú trải nghiệm của bạn ở tab <a href={`/runs/${run.id}?tab=places`}>Quán</a>, rồi bấm Duyệt: các quán đang tích được đưa vào bài ngay, không cần bấm Lưu trước.
         </div>
       ) : null}
       {run.status === 'waiting_outline' ? (
         <div class="alert warn">
-          Bố cục đã sẵn. Xem và sửa ở tab <a href={`/runs/${run.id}?tab=outline`}>Bố cục</a>, rồi bấm "Duyệt bố cục và viết bài".
+          Bố cục đã sẵn. Xem và sửa ở tab <a href={`/runs/${run.id}?tab=outline`}>Bố cục</a>, rồi bấm Duyệt: bố cục đang hiện trên màn hình được dùng để viết.
         </div>
       ) : null}
       {run.status === 'waiting_ai_score' ? (
@@ -966,7 +991,7 @@ function OutlineTab(p: RunDetailProps) {
       </div>
       <div class="card">
         <h2>Sửa bố cục</h2>
-        <form method="post" action={`/runs/${p.run.id}/outline`}>
+        <form method="post" action={`/runs/${p.run.id}/outline`} id="outline-form">
           <label>Title</label>
           <input type="text" name="title" value={o.title} />
           <label>H1</label>
@@ -1038,7 +1063,32 @@ function ArticleTab(p: RunDetailProps) {
   const md = articleToMarkdown(a);
   const html = articleToHtml(a, { withH1: true }).replace(/src="photos\//g, `src="/runs/${p.run.id}/photos/`);
   const kindLabel: Record<string, string> = { draft: 'bản nháp', edited: 'đã biên tập', fixed: 'đã sửa' };
-  const copyJs = `document.getElementById('copy-md').addEventListener('click',function(){var t=document.getElementById('md-src');t.select();navigator.clipboard.writeText(t.value).then(function(){var b=document.getElementById('copy-md');b.textContent='Đã sao chép';setTimeout(function(){b.textContent='Sao chép Markdown'},1500)})});document.getElementById('copy-html').addEventListener('click',function(){navigator.clipboard.writeText(${JSON.stringify(html)}).then(function(){var b=document.getElementById('copy-html');b.textContent='Đã sao chép';setTimeout(function(){b.textContent='Sao chép HTML'},1500)})});`;
+  const finished = p.run.status === 'done' || p.run.status === 'needs_review';
+  const pub = p.published;
+  const publishBox = pub?.pageId ? (
+    <a class="btn accent sm" href={`/sites/${pub.siteId}/pages/${pub.pageId}`}>
+      {ICO_CHECK}
+      Đã đăng vào {pub.domain}: mở bài
+    </a>
+  ) : p.publishSites.length && finished ? (
+    <form method="post" action={`/content/runs/${p.run.id}/publish`} class="publish-form">
+      {pub ? (
+        <input type="hidden" name="siteId" value={String(pub.siteId)} />
+      ) : p.publishSites.length === 1 ? (
+        <input type="hidden" name="siteId" value={String(p.publishSites[0]!.id)} />
+      ) : (
+        <select name="siteId" aria-label="Site đăng bài">
+          {p.publishSites.map((s) => (
+            <option value={String(s.id)}>{s.domain}</option>
+          ))}
+        </select>
+      )}
+      <button class="btn accent sm" type="submit" title={pub ? `Tạo bài nháp trên ${pub.domain}` : 'Tạo bài nháp trên site đã chọn'}>
+        {ICO_UPLOAD}
+        Đăng bài
+      </button>
+    </form>
+  ) : null;
   return (
     <>
       <div class="card" style="margin-bottom:16px">
@@ -1050,12 +1100,7 @@ function ArticleTab(p: RunDetailProps) {
             · {articleWordCount(a)} từ · {a.sections.length} mục · {a.faq.length} FAQ · kiểu {CONTENT_STYLES[a.style].name}
           </div>
           <div class="actions">
-            <button class="btn secondary sm" id="copy-md" type="button">
-              Sao chép Markdown
-            </button>
-            <button class="btn secondary sm" id="copy-html" type="button">
-              Sao chép HTML
-            </button>
+            {publishBox}
             <a class="btn secondary sm" href={`/runs/${p.run.id}/export/md`}>
               Tải .md
             </a>
@@ -1075,6 +1120,11 @@ function ArticleTab(p: RunDetailProps) {
               Tải gói ZIP (bài + ảnh)
             </a>
           </div>
+          {publishBox && !pub?.pageId ? (
+            <p class="hint">
+              <b>Đăng bài</b> tạo bài nháp trên site từ gói bài + ảnh (chưa công khai). Bạn sửa tiêu đề, đường dẫn, meta ở trang bài rồi bấm "Duyệt và đăng" để đưa lên web.
+            </p>
+          ) : null}
           {a.images.some((im) => im.src) ? (
             <p class="hint">
               Bài có {a.images.filter((im) => im.src).length} ảnh quán. Ảnh nằm trong gói ZIP (thư mục photos); .html và .docx đã nhúng sẵn ảnh.{' '}
@@ -1190,7 +1240,6 @@ function ArticleTab(p: RunDetailProps) {
           </details>
         </div>
       </div>
-      <script>{raw(copyJs)}</script>
     </>
   );
 }
@@ -1849,7 +1898,7 @@ function PlacesTab(p: RunDetailProps) {
         <h2>
           Quán {d.dish} ở {d.area} (bản {p.places!.version}) · <span id="featured-live">{featuredCount}</span> quán vào bài / {eligible.length} đủ điều kiện / {d.candidates.length} trên Maps
           <span id="featured-unsaved" class="pill" style="display:none;margin-left:8px">
-            đang chọn <b id="featured-picked">{featuredCount}</b>, đã lưu {featuredCount}: bấm Lưu
+            đang tích <b id="featured-picked">{featuredCount}</b> (đã lưu {featuredCount}); bấm Duyệt là dùng các quán đang tích
           </span>
         </h2>
         {/* Đếm ô tick ngay khi người dùng đổi, trước khi bấm Lưu */}
@@ -1944,7 +1993,7 @@ function PlacesTab(p: RunDetailProps) {
           </button>
           {waiting ? (
             <button class="btn" type="submit" name="action" value="approve">
-              Lưu, duyệt và viết bài
+              Duyệt các quán đang tích và viết bài
             </button>
           ) : (
             <button class="btn" type="submit" name="action" value="rerun" disabled={busy}>

@@ -816,6 +816,13 @@ export function LogView(props: { logs: LogRow[] }) {
 function ReviewBadge(props: { page: PageRow }) {
   const r = props.page.review;
   if (props.page.status === 'needs_review') {
+    if (r?.pass) {
+      return (
+        <span class="badge waiting" title="Bài nháp, chưa lên web. Bấm Duyệt và đăng khi sửa xong.">
+          Bản nháp, chưa đăng
+        </span>
+      );
+    }
     const majors = r?.issues.filter((i) => i.severity === 'major').length ?? 0;
     return (
       <span class="badge waiting" title={r?.issues.map((i) => i.message).join('\n')}>
@@ -1170,23 +1177,33 @@ export function PageDetail(props: { site: Site; page: PageRow }) {
           </span>
         </div>
       </form>
-      {props.page.review?.issues.length ? (
-        <div class={`alert ${props.page.status === 'needs_review' || !props.page.review?.pass ? 'warn' : 'info'}`}>
-          <b>{props.page.status === 'needs_review' ? 'Lỗi cần sửa trước khi đăng' : props.page.review?.pass ? 'Góp ý của cổng kiểm duyệt' : 'Trang đang đăng nhưng chưa đạt kiểm duyệt'}</b>
-          <ul class="small" style="margin:6px 0 0;padding-left:18px">
-            {props.page.review.issues.map((i) => (
-              <li>
-                <b>{i.severity === 'major' ? 'Bắt buộc' : 'Nên'}</b> · <span class="mono">{i.where}</span>: {i.message}
-              </li>
-            ))}
-          </ul>
+      {props.page.review?.issues.length || props.page.status === 'needs_review' ? (
+        <div class={`alert ${props.page.status === 'needs_review' && props.page.review?.pass ? 'info' : props.page.status === 'needs_review' || !props.page.review?.pass ? 'warn' : 'info'}`}>
+          <b>
+            {props.page.status === 'needs_review'
+              ? props.page.review?.pass
+                ? 'Bài nháp, chưa công khai. Sửa tiêu đề, đường dẫn, meta ở khung trên rồi bấm Duyệt và đăng.'
+                : 'Lỗi cần sửa trước khi đăng'
+              : props.page.review?.pass
+                ? 'Góp ý của cổng kiểm duyệt'
+                : 'Trang đang đăng nhưng chưa đạt kiểm duyệt'}
+          </b>
+          {props.page.review?.issues.length ? (
+            <ul class="small" style="margin:6px 0 0;padding-left:18px">
+              {props.page.review.issues.map((i) => (
+                <li>
+                  <b>{i.severity === 'major' ? 'Bắt buộc' : 'Nên'}</b> · <span class="mono">{i.where}</span>: {i.message}
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <div class="actions" style="margin-top:10px">
             <a class="btn sm" href={`/sites/${props.site.id}/editor?page=${props.page.id}`}>
               Sửa trực quan
             </a>
             {props.page.status === 'needs_review' ? (
               <form method="post" action={`/sites/${props.site.id}/pages/${props.page.id}/approve`} class="inline">
-                <button class="btn sm" type="submit" style="background:#16a34a;border-color:#16a34a" onclick="return confirm('Đăng trang này dù chưa đạt kiểm duyệt?')">
+                <button class="btn sm" type="submit" style="background:#16a34a;border-color:#16a34a" onclick={props.page.review?.pass ? undefined : "return confirm('Đăng trang này dù chưa đạt kiểm duyệt?')"}>
                   Duyệt và đăng
                 </button>
               </form>

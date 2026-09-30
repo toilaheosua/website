@@ -48,6 +48,12 @@ tr:last-child td{border-bottom:0}
 .btn.danger:hover{background:#fef2f2}
 .btn.sm{padding:5px 10px;font-size:.8rem}
 .btn[disabled]{opacity:.5;cursor:not-allowed}
+.btn.accent{background:#ea580c;border-color:#ea580c;color:#fff}
+.btn.accent:hover{background:#c2410c;border-color:#c2410c}
+.btn.lg{font-size:1.05rem;padding:11px 20px}
+.btn .ico{width:1.15em;height:1.15em;vertical-align:-.2em;margin-right:6px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.publish-form{display:inline-flex;align-items:center;gap:6px}
+.publish-form select{width:auto;padding:5px 8px;font-size:.85rem}
 form.inline{display:inline}
 label{display:block;font-weight:600;font-size:.85rem;margin:12px 0 4px}
 label small,.help{font-weight:400;color:var(--muted);font-size:.8rem}

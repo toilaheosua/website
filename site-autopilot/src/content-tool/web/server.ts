@@ -32,6 +32,22 @@ export interface WebDeps {
   experiments?: ExperimentRunner;
   /** Khung trang của dashboard bot (thanh điều hướng, đăng nhập dùng chung). */
   shell: (c: Context, title: string, body: unknown, opts: { refresh?: number; pollUrl?: string; pollKey?: string; flash?: Flash | null }) => Response | Promise<Response>;
+  /** Đăng bài vào site của bot: danh sách site để chọn và site/bài đã gắn với một lần chạy. */
+  publish?: {
+    sites: () => PublishSite[];
+    target: (runId: number) => PublishTarget | null;
+  };
+}
+
+export interface PublishSite {
+  id: number;
+  domain: string;
+}
+/** Lần chạy đã gắn với site nào; pageId có khi bài đã được tạo trên site. */
+export interface PublishTarget {
+  siteId: number;
+  domain: string;
+  pageId: number | null;
 }
 
 /** CSS riêng của mô-đun (bỏ :root để giữ bảng màu của bot). */
@@ -148,6 +164,8 @@ export function createApp(deps: WebDeps): Hono {
       detectorMode: services.integrations().originality.mode,
       activeRuns: worker.activeIds(),
       concurrency: worker.concurrency,
+      publishSites: deps.publish?.sites() ?? [],
+      published: deps.publish?.target(run.id) ?? null,
     };
     const busy = run.status === 'queued' || run.status === 'running' || experiments.isRunning(run.id);
     return render(c, `#${run.id} ${run.keyword}`, 'home', RunDetail(props), busy ? { pollUrl: `/runs/${run.id}/status.json`, pollKey: statusKey(run.id) } : {});

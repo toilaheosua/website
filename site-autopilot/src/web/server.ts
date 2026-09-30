@@ -485,6 +485,40 @@ export function createApp(deps: WebDeps): Hono {
     }
     return c.redirect(`/sites/${site.id}/pages`);
   });
+  /* ---------------- Tool Viết Content: nút Đăng bài ở tab Bài viết → bài nháp trên site ---------------- */
+  app.post('/content/runs/:id/publish', async (c) => {
+    const tool = services.contentTool;
+    const runId = Number.parseInt(c.req.param('id'), 10);
+    const run = tool && Number.isFinite(runId) ? tool.db.getRun(runId) : undefined;
+    if (!tool || !run) return c.notFound();
+    const back = `/runs/${run.id}?tab=article`;
+    const body = (await c.req.parseBody()) as FormBody;
+    const existing = db.getToolRun(run.id);
+    if (existing?.status === 'imported' && existing.imported_page_id && db.getPage(existing.imported_page_id)) {
+      flash(c, { type: 'info', text: 'Bài này đã có trên site, mở trang bài để sửa hoặc duyệt.' });
+      return c.redirect(`/sites/${existing.site_id}/pages/${existing.imported_page_id}`);
+    }
+    const siteId = existing?.site_id ?? Number.parseInt(str(body, 'siteId'), 10);
+    const site = Number.isFinite(siteId) ? db.getSite(siteId) : undefined;
+    if (!site) {
+      flash(c, { type: 'err', text: 'Chọn site để đăng bài.' });
+      return c.redirect(back);
+    }
+    if (run.status !== 'done' && run.status !== 'needs_review') {
+      flash(c, { type: 'warn', text: 'Bài chưa viết xong, chờ tool hoàn tất rồi đăng.' });
+      return c.redirect(back);
+    }
+    try {
+      if (!existing) db.addToolRun({ run_id: run.id, site_id: site.id, slug: `${ROUTES[site.brief.language].blog}/${run.slug}`, title: run.keyword, kind: run.options.kind });
+      const page = await tool.importRun(site, run, existing?.slug, { draft: true });
+      db.addLog({ site_id: site.id, step: 'content_tool', level: 'info', message: `Tạo bài nháp "${page.title}" từ Tool Viết Content #${run.id} (/${page.slug}/), chờ người dùng duyệt` });
+      flash(c, { type: 'ok', text: `Đã tạo bài nháp "${page.title}" trên ${site.domain}, chưa công khai. Sửa tiêu đề, đường dẫn, meta ở đây rồi bấm "Duyệt và đăng".` });
+      return c.redirect(`/sites/${site.id}/pages/${page.id}`);
+    } catch (err) {
+      flash(c, { type: 'err', text: `Không tạo được bài: ${errorMessage(err)}` });
+      return c.redirect(back);
+    }
+  });
   /* ---------------- Tool Viết Content: nhập bài đã viết vào site ---------------- */
   app.post('/sites/:id/posts/from-run', async (c) => {
     const site = siteOr404(c);

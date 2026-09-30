@@ -103,7 +103,22 @@ export class ContentToolBridge {
 
   /** Ứng dụng web của tool, gắn vào dashboard bot sau bước đăng nhập. */
   mount(shell: (c: Context, title: string, body: unknown, opts: { refresh?: number; pollUrl?: string; pollKey?: string; flash?: Flash | null }) => Response | Promise<Response>): Hono {
-    this.app = createToolApp({ db: this.db, config: this.config, services: this.services, worker: this.worker, shell });
+    this.app = createToolApp({
+      db: this.db,
+      config: this.config,
+      services: this.services,
+      worker: this.worker,
+      shell,
+      publish: {
+        sites: () => this.bot.db.listSites().map((s) => ({ id: s.id, domain: s.domain })),
+        target: (runId) => {
+          const row = this.bot.db.getToolRun(runId);
+          const site = row ? this.bot.db.getSite(row.site_id) : undefined;
+          if (!row || !site) return null;
+          return { siteId: site.id, domain: site.domain, pageId: row.status === 'imported' && row.imported_page_id ? row.imported_page_id : null };
+        },
+      },
+    });
     return this.app;
   }
 
@@ -203,8 +218,9 @@ export class ContentToolBridge {
   /**
    * Chuyển bài của tool thành bài trên site: JSON xuất + ảnh → cùng đường với "Nhập bài từ file",
    * thêm liên kết nội bộ và đoạn nhắc thương hiệu (site doanh nghiệp), chấm bằng cổng kiểm tra code rồi lưu.
+   * draft: lưu làm bài nháp (chưa công khai) để người dùng sửa tiêu đề, đường dẫn rồi tự duyệt.
    */
-  async importRun(site: Site, run: Run, slug?: string): Promise<{ id: number; title: string; slug: string; status: string }> {
+  async importRun(site: Site, run: Run, slug?: string, opts: { draft?: boolean } = {}): Promise<{ id: number; title: string; slug: string; status: string }> {
     const cur = latestArticle(this.db, run.id);
     if (!cur) throw new Error('Bài chưa có nội dung');
     const dir = path.join(this.config.exportsDir, String(run.id));
@@ -233,9 +249,16 @@ export class ContentToolBridge {
     content = autoFixPage(content);
     const issues = checkQuality(content);
     const pass = isPass(issues);
-    const review: ContentReview = { pass, issues, summary: pass ? `Bài từ Tool Viết Content #${run.id}, đạt kiểm tra tự động.` : `Bài từ Tool Viết Content #${run.id}, kiểm tra tự động có lỗi.`, approvedBy: pass ? 'auto' : undefined, checkedAt: new Date().toISOString() };
+    const draft = opts.draft === true;
+    const status = draft || !pass ? 'needs_review' : 'published';
+    const summary = draft
+      ? `Bài nháp từ Tool Viết Content #${run.id}${pass ? ', đạt kiểm tra tự động' : ', kiểm tra tự động có lỗi'}. Sửa tiêu đề, đường dẫn, meta rồi bấm Duyệt và đăng.`
+      : pass
+        ? `Bài từ Tool Viết Content #${run.id}, đạt kiểm tra tự động.`
+        : `Bài từ Tool Viết Content #${run.id}, kiểm tra tự động có lỗi.`;
+    const review: ContentReview = { pass, issues, summary, approvedBy: pass && !draft ? 'auto' : undefined, checkedAt: new Date().toISOString() };
     const posts = this.bot.db.listPages(site.id).filter((p) => p.kind === 'post').length;
-    const id = this.bot.db.upsertPage({ site_id: site.id, kind: 'post', slug: finalSlug, title: content.title, content, sort_order: existing?.sort_order ?? 10 + posts, status: pass ? 'published' : 'needs_review', review });
+    const id = this.bot.db.upsertPage({ site_id: site.id, kind: 'post', slug: finalSlug, title: content.title, content, sort_order: existing?.sort_order ?? 10 + posts, status, review });
     const short = finalSlug.slice(blog.length + 1);
     if (site.plan) {
       const plan = site.plan;
@@ -247,7 +270,7 @@ export class ContentToolBridge {
       if (lib) this.bot.db.upsertImage({ site_id: site.id, key: `post.${short}.hero`, provider: 'manual', provider_id: String(lib.id), query: null, file: lib.file, width: lib.width, height: lib.height, alt: content.heroImageAlt || lib.alt, credit: lib.credit, credit_url: '' });
     }
     this.bot.db.updateToolRun(run.id, { status: 'imported', imported_page_id: id, error: null });
-    return { id, title: content.title, slug: finalSlug, status: pass ? 'published' : 'needs_review' };
+    return { id, title: content.title, slug: finalSlug, status };
   }
 
   /** Site doanh nghiệp: thêm đoạn nhắc thương hiệu kèm liên kết nội bộ hợp lệ; site vệ tinh: chỉ lọc liên kết. */
