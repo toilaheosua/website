@@ -188,7 +188,12 @@ describe('bài tổng hợp quán theo khu vực (Google Maps mô phỏng)', () 
       expect(sec!.body).toContain(`query_place_id=${encodeURIComponent(p.placeId)}`);
       if (p.photoFile) expect(sec!.body).toContain(`](${p.photoFile})`);
     }
-    expect(article.sections[0]!.body).toContain('| Tiêu chí |');
+    // Bảng so sánh do tool dựng từ dữ liệu Maps thay cho bảng model viết: đủ 8 quán, có dòng phân cách
+    expect(article.sections[0]!.body).toMatch(/^\| Quán \| Sao \| Lượt đánh giá \|/m);
+    expect(article.sections[0]!.body).not.toContain('| Tiêu chí |');
+    expect(article.sections[0]!.body.split('\n').filter((l) => l.startsWith('| **')).length).toBe(8);
+    const fitSec = article.sections.find((s) => /hợp ai/i.test(s.heading))!;
+    expect(fitSec.body).toContain('| Bạn cần gì | Quán nên chọn | Vì sao |');
     const ex = db.getArtifact<{ dir: string; files: Record<string, string> }>(run.id, 'exports')!.content;
     const json = JSON.parse(fs.readFileSync(path.join(ex.dir, ex.files.json!), 'utf8')) as { places: { name: string; mapsUrl: string }[]; sources: string[] };
     expect(json.places.length).toBe(8);

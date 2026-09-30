@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addressInArea, applyPlaceRoles, heuristicRoles, buildPlaces, distanceKm, distinctiveName, enforcePlaceSections, featuredPlaces, formatOperatingHours, formatPhone, headingMatches, heuristicClassify, normalizeGroupKey, normalizePrice, parsePlaceNotes, renumberPlaces, splitKeyword, stripInjectedLines, titleCaseWords } from '../../src/content-tool/core/roundup.js';
+import { addressInArea, applyPlaceRoles, heuristicRoles, buildComparisonTable, buildFitTable, buildPlaces, distanceKm, distinctiveName, enforcePlaceSections, featuredPlaces, formatOperatingHours, formatPhone, headingMatches, heuristicClassify, normalizeGroupKey, normalizePrice, parsePlaceNotes, renumberPlaces, replaceTableIn, shortHours, splitKeyword, stripInjectedLines, titleCaseWords } from '../../src/content-tool/core/roundup.js';
 import { checkSectionRepeats } from '../../src/content-tool/generator/quality.js';
 import type { Article, PlacesData } from '../../src/content-tool/core/types.js';
 import type { RawPlace } from '../../src/content-tool/services/types.js';
@@ -207,6 +207,17 @@ describe('tổng hợp quán: lọc, gộp, xếp hạng', () => {
     expect(out.sections[4]!.heading).toBe('Quán nào hợp ai');
     expect(out.images.some((im) => im.src === 'photos/2-hu-tieu-co-ba.jpg')).toBe(true);
     expect(stripInjectedLines(coBa.body)).toBe('Đoạn văn về Cô Ba. Xem');
+    // Bảng so sánh của model bị thay bằng bảng dựng từ dữ liệu Maps: đủ quán, đúng số, có dòng phân cách
+    const compare = out.sections[0]!;
+    expect(compare.heading).toBe('So sánh nhanh');
+    expect(compare.body).not.toContain('| a | b |');
+    expect(compare.body).toMatch(/^\| Quán \| Sao \| Lượt đánh giá \|/);
+    expect(compare.body.split('\n')[1]).toMatch(/^\| --- \| --- \|/);
+    expect(compare.body).toContain('| **1. ');
+    expect(compare.body).toContain('Hủ tiếu Bà Sáu** | 4.7 | 90 |');
+    expect(compare.body.split('\n').filter((l) => l.startsWith('| **')).length).toBe(featuredPlaces(data).length);
+    // Chưa có vai riêng thì mục "hợp ai" giữ nguyên chữ của model
+    expect(out.sections[4]!.body).toBe('bảng');
   });
 });
 
@@ -291,5 +302,40 @@ describe('số thứ tự sau khi chọn tay', () => {
     byName('D').featured = true;
     renumberPlaces(data);
     expect(featuredPlaces(data).map((p) => p.name)).toEqual(['Hủ tiếu A', 'Hủ tiếu B', 'Hủ tiếu C', 'Hủ tiếu D', 'Hủ tiếu E']);
+  });
+});
+
+describe('bảng dựng bằng mã từ dữ liệu Maps', () => {
+  const mkData = (): PlacesData => {
+    const list: RawPlace[] = [raw(1, { title: 'Hủ tiếu Ông Giáo', rating: 4.7, reviews: 2208, price: '₫20.000–50.000', hours: 'Thứ Hai: 05:00–12:00', operatingHours: { 'thứ hai': '05:00–12:00', 'thứ ba': '05:00–12:00' } }), raw(2, { title: 'Hủ tiếu Cô Ba', rating: 4.5, reviews: 300, hours: '' }), raw(3, { title: 'Hủ tiếu Dì Út', rating: 4.9, reviews: 40, hours: '' })];
+    const cls = list.map((_r, i) => ({ index: i + 1, matchesDish: true, inArea: true, groupKey: '' }));
+    return { dish: 'hủ tiếu', area: 'Phan Rang', query: 'q', center: null, collectedAt: '', pagesFetched: 1, minReviews: 5, bayesM: 30, ...buildPlaces({ raw: list, classes: cls, dish: 'hủ tiếu', area: 'Phan Rang', minReviews: 5, bayesM: 30, featuredCount: 3, userNotes: '' }) } as unknown as PlacesData;
+  };
+  it('bảng so sánh chỉ có cột có dữ liệu, giờ mở rút gọn, tên quán in đậm kèm số thứ tự', () => {
+    const data = mkData();
+    const md = buildComparisonTable(data);
+    const lines = md.split('\n');
+    expect(lines[0]).toBe('| Quán | Sao | Lượt đánh giá | Giá | Giờ mở |');
+    expect(lines[1]).toBe('| --- | --- | --- | --- | --- |');
+    expect(lines.length).toBe(5);
+    expect(md).toContain('| **1. Hủ tiếu Ông Giáo** | 4.7 | 2.208 | 20.000 đến 50.000 đ | 05:00-12:00 |');
+    expect(shortHours('Thứ hai đến Thứ năm 15:00 đến 22:30; Thứ sáu 15:00 đến 00:30')).toBe('15:00-22:30 (tùy ngày)');
+    expect(shortHours('Hằng ngày 17:00 đến 01:00')).toBe('17:00-01:00');
+    expect(shortHours('')).toBe('');
+  });
+  it('bảng hợp ai từ vai riêng; thay bảng model viết trong mục, giữ câu dẫn và nhận xét', () => {
+    const data = mkData();
+    expect(buildFitTable(data)).toBe('');
+    for (const p of featuredPlaces(data)) p.role = { label: `vai ${p.rank}`, reason: `Lý do ${p.rank}.`, bestFor: `tình huống ${p.rank}` };
+    const fit = buildFitTable(data);
+    expect(fit.split('\n')[0]).toBe('| Bạn cần gì | Quán nên chọn | Vì sao |');
+    expect(fit).toContain('| Tình huống 1 | **Hủ tiếu Ông Giáo** | Lý do 1. |');
+    expect(replaceTableIn('Câu dẫn.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nNhận xét sau bảng.\n\nCâu dẫn hai. | x | y | | 1 | 2 | | 3 | 4 |', '| T |')).toBe('Câu dẫn.\n\n| T |\n\nNhận xét sau bảng.');
+    const article: Article = { title: 't', metaDescription: 'm', h1: 'h', excerpt: '', quickSummary: [], intro: 'i', sections: [{ heading: '1. Hủ tiếu Ông Giáo', level: 2, body: 'A.' }, { heading: '2. Hủ tiếu Cô Ba', level: 2, body: 'B.' }, { heading: '3. Hủ tiếu Dì Út', level: 2, body: 'C.' }, { heading: 'Cách tôi xếp hạng', level: 2, body: 'X.' }], faq: [], nextSteps: '', images: [], targetKeyword: 'k', secondaryKeywords: [], style: 'story' };
+    const out = enforcePlaceSections(article, data);
+    // Thiếu hai mục thì tool thêm: so sánh trước quán đầu, hợp ai sau quán cuối, xếp hạng vẫn cuối
+    expect(out.sections.map((s) => s.heading)).toEqual(['So sánh nhanh 3 quán hủ tiếu ở Phan Rang', '1. Hủ tiếu Ông Giáo', '2. Hủ tiếu Cô Ba', '3. Hủ tiếu Dì Út', 'Quán nào hợp ai', 'Cách tôi xếp hạng']);
+    expect(out.sections[0]!.body).toContain('| **1. Hủ tiếu Ông Giáo** |');
+    expect(out.sections[4]!.body).toContain('| Bạn cần gì |');
   });
 });

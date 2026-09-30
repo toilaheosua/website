@@ -394,6 +394,101 @@ export function isInjectedLine(line: string): boolean {
   return t.startsWith('![') || INFO_LINE_RE.test(t);
 }
 
+/* ------------------------------------------------------------------ */
+/*  Bảng so sánh và bảng "hợp ai" dựng bằng mã từ dữ liệu Google Maps    */
+/* ------------------------------------------------------------------ */
+
+const COMPARE_HEADING_RE = /so sánh/i;
+const FIT_HEADING_RE = /hợp ai|hợp với ai|nên chọn quán nào|chọn quán theo|quán nào cho/i;
+
+function cell(s: string): string {
+  return s.replace(/\|/g, '/').replace(/\s+/g, ' ').trim();
+}
+const row = (cells: string[]) => `| ${cells.map(cell).join(' | ')} |`;
+const sepRow = (n: number) => `| ${Array.from({ length: n }, () => '---').join(' | ')} |`;
+const upFirst = (s: string) => (s && /^\p{L}/u.test(s) ? s[0]!.toLocaleUpperCase('vi') + s.slice(1) : s);
+
+/** Giờ mở gọn cho ô bảng: khoảng đầu tiên, ghi "(tùy ngày)" khi mỗi ngày một giờ. */
+export function shortHours(s: string): string {
+  if (!s.trim()) return '';
+  // Nhiều khung theo ngày: lấy khung đầu (hoursRange lấy giờ đóng cuối chuỗi nên không dùng cho cả chuỗi)
+  const h = hoursRange(s.split(';')[0]!);
+  if (!h) return s.length > 24 ? `${s.slice(0, 22).trim()}…` : s;
+  const close = h.close >= 24 * 60 ? h.close - 24 * 60 : h.close;
+  return `${hhmm(h.open)}-${hhmm(close)}${/;/.test(s) ? ' (tùy ngày)' : ''}`;
+}
+
+/**
+ * Bảng so sánh nhanh toàn bộ quán, dựng thẳng từ dữ liệu Maps nên số liệu luôn đúng và định dạng luôn chuẩn;
+ * model không viết bảng này nữa. Chỉ có cột mà ít nhất một quán có dữ liệu.
+ */
+export function buildComparisonTable(data: PlacesData): string {
+  const featured = featuredPlaces(data);
+  if (!featured.length) return '';
+  type Col = { head: string; cell: (p: PlaceInfo) => string };
+  const all: Col[] = [
+    { head: 'Quán', cell: (p) => `**${p.rank}. ${p.name}**` },
+    { head: 'Sao', cell: (p) => (p.rating ? p.rating.toFixed(1) : '') },
+    { head: 'Lượt đánh giá', cell: (p) => (p.reviews ? fmtNum(p.reviews) : '') },
+    { head: 'Giá', cell: (p) => p.price },
+    { head: 'Giờ mở', cell: (p) => shortHours(p.openingHours) },
+    { head: 'Nổi bật', cell: (p) => p.role?.label || p.summary?.signature[0] || p.summary?.praised[0] || '' },
+  ];
+  const cols = all.filter((c) => featured.some((p) => c.cell(p).trim()));
+  return [row(cols.map((c) => c.head)), sepRow(cols.length), ...featured.map((p) => row(cols.map((c) => upFirst(c.cell(p)))))].join('\n');
+}
+
+/** Bảng "bạn cần gì → quán nên chọn → vì sao" từ vai riêng của từng quán; cần ít nhất hai quán có vai. */
+export function buildFitTable(data: PlacesData): string {
+  const rows = featuredPlaces(data)
+    .filter((p) => p.role?.bestFor?.trim())
+    .map((p) => [upFirst(p.role!.bestFor.trim()), `**${p.name}**`, p.role!.reason?.trim() || p.role!.label]);
+  if (rows.length < 2) return '';
+  return [row(['Bạn cần gì', 'Quán nên chọn', 'Vì sao']), sepRow(3), ...rows.map(row)].join('\n');
+}
+
+/** Bỏ mọi bảng model viết trong một mục (kể cả bảng viết trên một dòng), đặt bảng của tool ngay sau đoạn dẫn đầu tiên. */
+export function replaceTableIn(body: string, table: string): string {
+  const paras = body
+    .split(/\n\s*\n/)
+    .map((p) => p.split('\n').filter((l) => !l.trim().startsWith('|') && (l.match(/\|\s*\|/g) ?? []).length < 2).join('\n').trim())
+    .filter(Boolean);
+  const [lead, ...rest] = paras;
+  return [lead, table, ...rest].filter(Boolean).join('\n\n');
+}
+
+/**
+ * Chèn hai bảng vào bài: mục "so sánh" và mục "hợp ai" nếu có thì thay bảng của model, chưa có thì thêm mục
+ * (so sánh đặt trước mục quán đầu tiên, hợp ai đặt sau mục quán cuối).
+ */
+export function injectRoundupTables(article: Article, data: PlacesData): Article {
+  const sections = article.sections.map((s) => ({ ...s }));
+  const featured = featuredPlaces(data);
+  const isPlace = (h: string) => featured.some((p) => headingMatches(h, p.name, data.dish));
+  const compare = buildComparisonTable(data);
+  if (compare) {
+    const idx = sections.findIndex((s) => s.level === 2 && COMPARE_HEADING_RE.test(s.heading) && !isPlace(s.heading));
+    if (idx >= 0) sections[idx]!.body = replaceTableIn(sections[idx]!.body, compare);
+    else {
+      const firstPlace = sections.findIndex((s) => s.level === 2 && isPlace(s.heading));
+      sections.splice(Math.max(firstPlace, 0), 0, { heading: `So sánh nhanh ${featured.length} quán ${data.dish} ở ${data.area}`, level: 2, body: `Bảng dưới đây gom sao, số lượt đánh giá, giá và giờ mở của ${featured.length} quán từ Google Maps để bạn chọn nhanh trước khi đọc chi tiết từng quán.\n\n${compare}` });
+    }
+  }
+  const fit = buildFitTable(data);
+  if (fit) {
+    const idx = sections.findIndex((s) => s.level === 2 && FIT_HEADING_RE.test(s.heading) && !isPlace(s.heading));
+    if (idx >= 0) sections[idx]!.body = replaceTableIn(sections[idx]!.body, fit);
+    else {
+      let lastPlace = -1;
+      sections.forEach((s, i) => {
+        if (s.level === 2 && isPlace(s.heading)) lastPlace = i;
+      });
+      sections.splice(lastPlace + 1, 0, { heading: 'Quán nào hợp ai', level: 2, body: `Mỗi quán mạnh ở một tình huống; chọn theo việc bạn cần hôm đó.\n\n${fit}` });
+    }
+  }
+  return { ...article, sections };
+}
+
 /**
  * Bỏ những gì tool chèn hoặc model tự bịa: dòng ảnh, dòng địa chỉ và đánh giá, link Google Maps trong câu.
  * Dùng trước khi chèn lại từ dữ liệu thật, và khi đo trùng lặp, quét AI.
@@ -491,7 +586,7 @@ export function enforcePlaceSections(article: Article, data: PlacesData): Articl
     lastPlaceIdx = idx;
   }
   const title = roundupTitle(featured.length, data.dish, data.area);
-  return moveRankingSectionLast({ ...article, title, h1: title, sections, images });
+  return moveRankingSectionLast(injectRoundupTables({ ...article, title, h1: title, sections, images }, data));
 }
 
 const RANKING_HEADING_RE = /xếp hạng|cách (tôi|mình|chúng tôi) (chọn|xếp|lọc)|tiêu chí (chọn|xếp)/i;
