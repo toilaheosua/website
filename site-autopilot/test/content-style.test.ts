@@ -39,5 +39,7 @@ describe('liên kết nội bộ', () => {
   });
   it('liên kết tương đối không có dấu / bị bỏ, anchor cùng trang giữ nguyên', () => {
     expect(sanitizeInternalLinks('[a](dich-vu) [b](#faq)', valid)).toBe('a [b](#faq)');
+    // Ảnh trong bài (kể cả ảnh thư viện /assets/img/) và file tĩnh /assets/ không bị coi là liên kết nội bộ sai
+    expect(sanitizeInternalLinks('![Ốc Cô Ba ở Phan Rang](/assets/img/oc-co-ba.webp) và [tải](/assets/menu.pdf) và ![x](photos/1.jpg)', valid)).toBe('![Ốc Cô Ba ở Phan Rang](/assets/img/oc-co-ba.webp) và [tải](/assets/menu.pdf) và ![x](photos/1.jpg)');
   });
 });

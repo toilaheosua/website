@@ -30,8 +30,10 @@ export function mdToText(md: string): string {
  */
 export function sanitizeInternalLinks(md: string, validPaths: string[]): string {
   const valid = new Set(validPaths.map((p) => normalizePath(p)));
-  return (md ?? '').replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (whole, text: string, href: string) => {
-    if (/^(https?:)?\/\//i.test(href) || href.startsWith('mailto:') || href.startsWith('tel:')) return whole;
+  return (md ?? '').replace(/(!?)\[([^\]]+)\]\(([^)\s]+)\)/g, (whole, bang: string, text: string, href: string) => {
+    // Ảnh (![alt](src)) không phải liên kết nội bộ: giữ nguyên, nếu không sẽ thành !alt và mất ảnh
+    if (bang) return whole;
+    if (/^(https?:)?\/\//i.test(href) || href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('/assets/')) return whole;
     if (!href.startsWith('/') && !href.startsWith('#')) return text;
     if (href.startsWith('#')) return whole;
     const [pathPart] = href.split('#');
