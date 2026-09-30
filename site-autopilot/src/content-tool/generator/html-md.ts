@@ -95,6 +95,63 @@ export function htmlToMarkdown(s: string): string {
  * Bảng markdown phải cách văn bản trước và sau một dòng trống, nếu không trình dựng coi cả khối là một đoạn văn
  * (chữ dính liền, mất cột). Chèn dòng trống ở ranh giới bảng và văn bản.
  */
+/**
+ * Model hay viết cả bảng trên một dòng, các hàng nối nhau bằng "| |" và câu dẫn đứng ngay trước ô đầu:
+ * "…của từng quán. | Quán | Sao | | Ốc Cô Ba | 4.7 | | …". Trình dựng coi đó là một đoạn văn. Tách lại thành
+ * câu dẫn riêng và từng hàng một dòng, thêm dòng phân cách sau hàng tiêu đề nếu thiếu, bù ô cho hàng ngắn.
+ */
+export function repairInlineTables(md: string): string {
+  const out: string[] = [];
+  for (const line of md.split('\n')) {
+    const boundaries = (line.match(/\|\s*\|/g) ?? []).length;
+    if (boundaries < 2 || (line.match(/\|/g) ?? []).length < 6) {
+      out.push(line);
+      continue;
+    }
+    const first = line.indexOf('|');
+    const lead = line.slice(0, first).trim();
+    const rows = line
+      .slice(first)
+      .split(/\|\s*\|/)
+      .map((r) => r.replace(/^\s*\|/, '').replace(/\|\s*$/, '').trim())
+      .filter((r) => r.length)
+      .map((r) => r.split('|').map((c) => c.trim()));
+    if (rows.length < 2) {
+      out.push(line);
+      continue;
+    }
+    if (lead) out.push(lead, '');
+    const cols = Math.max(...rows.map((r) => r.length));
+    const pad = (r: string[]) => [...r, ...Array.from({ length: cols - r.length }, () => '')];
+    const fmt = (r: string[]) => `| ${pad(r).join(' | ')} |`;
+    const [head, ...body] = rows;
+    out.push(fmt(head!));
+    if (!body.length || !body[0]!.every((c) => /^:?-{2,}:?$/.test(c))) out.push(`| ${Array.from({ length: cols }, () => '---').join(' | ')} |`);
+    for (const r of body) if (!r.every((c) => /^:?-{2,}:?$/.test(c))) out.push(fmt(r));
+  }
+  return ensureTableSeparators(out.join('\n'));
+}
+
+/** Khối bảng (các dòng liền nhau bắt đầu bằng "|") mà dòng hai không phải dòng phân cách thì chèn vào. */
+export function ensureTableSeparators(md: string): string {
+  const lines = md.split('\n');
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i]!;
+    out.push(l);
+    const isRow = (s: string | undefined) => !!s && /^\s*\|.*\|\s*$/.test(s);
+    const prevIsRow = i > 0 && isRow(lines[i - 1]);
+    if (isRow(l) && !prevIsRow && isRow(lines[i + 1])) {
+      const next = lines[i + 1]!.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+      if (!next.every((c) => /^:?-{2,}:?$/.test(c))) {
+        const cols = l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').length;
+        out.push(`| ${Array.from({ length: cols }, () => '---').join(' | ')} |`);
+      }
+    }
+  }
+  return out.join('\n');
+}
+
 export function separateTables(md: string): string {
   return md.replace(/([^\n|])\n(\|)/g, '$1\n\n$2').replace(/(\|)\n([^|\n])/g, '$1\n\n$2');
 }

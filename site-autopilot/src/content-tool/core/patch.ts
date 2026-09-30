@@ -5,6 +5,38 @@
  */
 import type { AiBlockScore, AiReview, Article, ArticlePatch, DupReport, PatchTarget, QualityIssue } from './types.js';
 import { normText, wordCount } from './util.js';
+import { isInjectedLine } from './roundup.js';
+
+/** Bài có bảng markdown (từ hai dòng "|" liền nhau) ở đâu đó không. */
+export function articleHasTable(a: Article): boolean {
+  return patchableParts(a).some((p) => /(^|\n)\s*\|.*\|\s*\n\s*\|.*\|/.test(p.text));
+}
+
+// \b của JavaScript không hiểu chữ có dấu (tớ khớp trong tới), nên dùng lookaround Unicode
+const EXPERIENCE_RE = /(?<![\p{L}\p{N}])(tôi|mình|chúng tôi|tụi mình|bọn mình|tớ|người viết)(?![\p{L}\p{N}])|(?<![\p{L}])đã (ăn|ghé|thử|đến|tới|gọi|ngồi|quay lại)(?![\p{L}])|(ghé|ăn|nếm) thử(?![\p{L}])|lần (đầu|trước|nào|gần nhất)|hôm (đó|ấy|trước|rồi)|chủ quán (nói|kể|bảo)/iu;
+
+/** Lý do một lỗi duyệt bị bỏ dù có trích dẫn: câu trích là dòng dữ liệu tool chèn từ Google Maps, hoặc lỗi không đúng bản chất. */
+export function bogusReviewReason(issue: AiReview['issues'][number], a: Article, quoteLine: string | null): string | null {
+  const quote = (issue.quote ?? '').trim();
+  if (quote && (isInjectedLine(quote) || (quoteLine !== null && isInjectedLine(quoteLine)))) return 'câu trích là dòng địa chỉ, giờ mở, đánh giá do tool chèn từ Google Maps';
+  if (/trải nghiệm|đã ăn|đã ghé|từng ăn|từng ghé/i.test(issue.problem) && quote && !EXPERIENCE_RE.test(quote)) return 'câu trích không kể trải nghiệm cá nhân';
+  if (/thiếu bảng|không có bảng/i.test(issue.problem) && articleHasTable(a)) return 'bài đã có bảng';
+  return null;
+}
+
+/** Dòng trong bài chứa đoạn trích (để biết trích dẫn rơi vào dòng tool chèn hay không). */
+function lineOfQuote(a: Article, quote: string): string | null {
+  const q = plainish(quote);
+  if (q.length < 12) return null;
+  const head = q.split(' ').slice(0, 8).join(' ');
+  for (const p of patchableParts(a)) {
+    for (const line of p.text.split('\n')) {
+      const pl = plainish(line);
+      if (pl.includes(q) || (head.split(' ').length >= 5 && pl.includes(head))) return line;
+    }
+  }
+  return null;
+}
 
 const WHERE_RE = /^(title|metaDescription|h1|excerpt|intro|nextSteps|sections\.\d+|faq\.\d+)$/;
 
@@ -58,8 +90,9 @@ export function findQuote(a: Article, quote: string): string | null {
  * lỗi không trích dẫn chỉ giữ khi là lỗi "thiếu" (thiếu mục, thiếu quán, thiếu bảng) vì không có câu để trích.
  * Vị trí sai được sửa theo chỗ tìm thấy trích dẫn.
  */
-export function verifyReviewIssues(review: AiReview, a: Article): { review: AiReview; dropped: number } {
+export function verifyReviewIssues(review: AiReview, a: Article): { review: AiReview; dropped: number; reasons: string[] } {
   let dropped = 0;
+  const reasons: string[] = [];
   const issues: AiReview['issues'] = [];
   for (const i of review.issues) {
     const quote = (i.quote ?? '').trim();
@@ -67,18 +100,32 @@ export function verifyReviewIssues(review: AiReview, a: Article): { review: AiRe
       const at = findQuote(a, quote);
       if (!at) {
         dropped++;
+        reasons.push(`không có câu "${quote.slice(0, 60)}" trong bài`);
+        continue;
+      }
+      const bogus = bogusReviewReason(i, a, lineOfQuote(a, quote));
+      if (bogus) {
+        dropped++;
+        reasons.push(bogus);
         continue;
       }
       issues.push({ ...i, where: isPatchable(a, i.where) ? i.where : at });
       continue;
     }
-    if (i.severity === 'minor' || /\bthiếu\b|không có mục|chưa có mục|missing/i.test(i.problem)) {
+    if (i.severity === 'minor' || /\bthiếu\b|không có mục|chưa có mục|missing|sai ý định/i.test(i.problem)) {
+      const bogus = bogusReviewReason(i, a, null);
+      if (bogus) {
+        dropped++;
+        reasons.push(bogus);
+        continue;
+      }
       issues.push(i);
       continue;
     }
     dropped++;
+    reasons.push('lỗi không có câu trích');
   }
-  return { review: { ...review, issues }, dropped };
+  return { review: { ...review, issues }, dropped, reasons };
 }
 
 /** Khóa nhận diện một lỗi duyệt qua các vòng: theo câu trích, không có thì theo vị trí và vấn đề. */

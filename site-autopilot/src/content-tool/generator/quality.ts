@@ -1,7 +1,7 @@
 import type { Article, IssueSeverity, QualityIssue } from '../core/types.js';
 import { normText, wordCount } from '../core/util.js';
 import { headingMatches, stripInjectedLines } from '../core/roundup.js';
-import { htmlToMarkdown, separateTables } from './html-md.js';
+import { htmlToMarkdown, repairInlineTables, separateTables } from './html-md.js';
 
 /**
  * Cổng kiểm duyệt chất lượng bằng code: cấu trúc, độ dài, câu sáo rỗng, dấu vết văn máy, nhồi từ khóa.
@@ -84,7 +84,7 @@ export function articleWordCount(a: Article): number {
 export function autoFixArticle(a: Article): Article {
   const fixMd = (md: string) =>
     separateTables(
-      htmlToMarkdown(md)
+      repairInlineTables(htmlToMarkdown(md))
         .replace(/\s*[—–]\s*/g, ', ')
         .replace(/<\/?[a-z][^>]*>/gi, '')
         .replace(/^#{1,6}\s+(.+)$/gm, '**$1**')

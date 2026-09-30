@@ -43,6 +43,24 @@ describe('AI duyệt có bằng chứng', () => {
     };
     const { review: v, dropped } = verifyReviewIssues(review, a);
     expect(dropped).toBe(2);
+    // Lỗi trỏ vào dòng dữ liệu Maps do tool chèn, lỗi "trải nghiệm bịa" ở câu không có ngôi thứ nhất, và "thiếu bảng" khi bài có bảng: bỏ
+    const bogus = verifyReviewIssues(
+      {
+        pass: false,
+        summary: '',
+        issues: [
+          { severity: 'major', where: 'sections.1', problem: 'Địa chỉ ghi Khánh Hòa nhưng Phan Rang thuộc Ninh Thuận.', fix: 'Sửa', quote: '**Địa chỉ:** 1 Thống Nhất' },
+          { severity: 'major', where: 'sections.2', problem: 'Mục quán kể trải nghiệm cá nhân mà không có ghi chú.', fix: 'Xóa', quote: 'Đoạn 6 nói về nước lèo trong và ngọt hậu, sợi trụng vừa tới, người bán làm lâu năm nên tay nghề chắc.' },
+          { severity: 'major', where: 'sections.1', problem: 'Mục quán kể trải nghiệm cá nhân mà không có ghi chú.', fix: 'Xóa', quote: 'Tôi để ý phần nền quyết định gần hết mọi thứ ở lần 3.' },
+          { severity: 'major', where: 'body', problem: 'Thiếu bảng so sánh nhanh cho toàn bộ quán.', fix: 'Thêm bảng', quote: '' },
+        ],
+      },
+      a,
+    );
+    expect(bogus.dropped).toBe(3);
+    expect(bogus.review.issues).toHaveLength(1);
+    expect(bogus.review.issues[0]!.quote).toContain('Tôi để ý');
+    expect(bogus.reasons).toEqual(['câu trích là dòng địa chỉ, giờ mở, đánh giá do tool chèn từ Google Maps', 'câu trích không kể trải nghiệm cá nhân', 'bài đã có bảng']);
     expect(v.issues.map((i) => i.where)).toEqual(['faq.0', 'sections', 'intro']);
     expect(v.issues[0]!.problem).toContain('giá');
     expect(v.issues[2]!.severity).toBe('minor');

@@ -107,6 +107,10 @@ describe('tổng hợp quán: tách từ khóa và so địa chỉ', () => {
     expect(normalizePrice('$$$')).toBe('khá cao');
     expect(normalizePrice('₫20.000–50.000')).toBe('20.000 đến 50.000 đ');
     expect(normalizePrice('500.000+ ₫')).toBe('cao cấp (trên 500.000 đ một người)');
+    // Google Maps tiếng Việt viết tắt theo nghìn; bậc rẻ nhất "₫1+"
+    expect(normalizePrice('₫100–300')).toBe('100.000 đến 300.000 đ');
+    expect(normalizePrice('₫100–200')).toBe('tầm trung (100.000 đến 200.000 đ một người)');
+    expect(normalizePrice('₫1+')).toBe('bình dân');
     expect(normalizePrice('')).toBe('');
   });
   it('phân loại bằng quy tắc khi model lỗi', () => {

@@ -104,7 +104,10 @@ export function normalizePrice(raw: string): string {
     const n = t.length;
     return n <= 1 ? 'bình dân' : n === 2 ? 'tầm trung' : n === 3 ? 'khá cao' : 'cao cấp';
   }
-  const nums = [...t.matchAll(/\d[\d.,]*/g)].map((m) => Number.parseInt(m[0]!.replace(/[.,]/g, ''), 10)).filter((n) => Number.isFinite(n));
+  let nums = [...t.matchAll(/\d[\d.,]*/g)].map((m) => Number.parseInt(m[0]!.replace(/[.,]/g, ''), 10)).filter((n) => Number.isFinite(n));
+  // Google Maps tiếng Việt viết tắt theo nghìn ("₫100–300" là 100.000 đến 300.000 đ); "₫1+" là bậc giá rẻ nhất
+  if (nums.length && nums.every((n) => n >= 10 && n < 1000)) nums = nums.map((n) => n * 1000);
+  if (nums.length === 1 && nums[0]! <= 1) return 'bình dân';
   const fmt = (n: number) => n.toLocaleString('vi-VN');
   if (nums.length >= 2) {
     const [lo, hi] = [Math.min(nums[0]!, nums[1]!), Math.max(nums[0]!, nums[1]!)];
@@ -386,7 +389,7 @@ export function buildRoundupNotes(data: PlacesData, keyword: string, options: Ru
 const INFO_LINE_RE = /^\s*(\*\*)?(Địa chỉ|Đánh giá|Google Maps|Giờ mở cửa|Liên hệ|Điện thoại|Website)(\*\*)?\s*:/i;
 const MAPS_LINK_RE = /\[[^\]]*\]\((?:https?:\/\/)?(?:www\.)?(?:google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|maps\.app\.goo\.gl|goo\.gl\/maps)[^)]*\)/gi;
 
-function isInjectedLine(line: string): boolean {
+export function isInjectedLine(line: string): boolean {
   const t = line.trim();
   return t.startsWith('![') || INFO_LINE_RE.test(t);
 }

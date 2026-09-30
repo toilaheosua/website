@@ -486,8 +486,11 @@ async function stepVerify(ctx: StepContext): Promise<StepResult> {
       }
       const verified = verifyReviewIssues(raw, article);
       droppedReview = verified.dropped;
+      if (verified.dropped) ctx.log(`Vòng ${round}: bỏ ${verified.dropped} lỗi AI duyệt không có căn cứ (${[...new Set(verified.reasons)].join('; ')})`, 'warn');
       const majors = verified.review.issues.filter((i) => i.severity === 'major');
-      const confirmedKeys = new Set(prevReviewKeys === null ? majors.map(reviewIssueKey) : majors.map(reviewIssueKey).filter((k) => prevReviewKeys!.has(k)));
+      // Lỗi có câu trích đã kiểm chứng là bằng chứng đủ mạnh: chặn ngay. Lỗi không trích được (thiếu mục, sai ý định)
+      // mơ hồ hơn: vòng đầu chặn, các vòng sau phải lặp lại ở hai vòng liên tiếp mới chặn.
+      const confirmedKeys = new Set(majors.filter((i) => (i.quote ?? '').trim() || prevReviewKeys === null || prevReviewKeys.has(reviewIssueKey(i))).map(reviewIssueKey));
       review = { ...verified.review, issues: verified.review.issues.map((i) => ({ ...i, confirmed: i.severity === 'major' && confirmedKeys.has(reviewIssueKey(i)) })) };
       review.pass = !review.issues.some((i) => i.confirmed);
       prevReviewKeys = new Set(majors.map(reviewIssueKey));

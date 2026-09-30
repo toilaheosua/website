@@ -3,7 +3,7 @@ import type { Article } from '../../src/content-tool/core/types.js';
 import { articleWordCount, autoFixArticle, capFirst, checkQuality, isPass, sentencesOf } from '../../src/content-tool/generator/quality.js';
 import { ROUNDUP_BANNED } from '../../src/content-tool/core/pipeline.js';
 import { wordCount } from '../../src/content-tool/core/util.js';
-import { htmlToMarkdown, separateTables } from '../../src/content-tool/generator/html-md.js';
+import { ensureTableSeparators, htmlToMarkdown, repairInlineTables, separateTables } from '../../src/content-tool/generator/html-md.js';
 import { markdownToHtml } from '../../src/content-tool/generator/markdown.js';
 import { roundupWordLimits } from '../../src/content-tool/core/pipeline.js';
 
@@ -103,6 +103,33 @@ describe('cổng chất lượng', () => {
     expect(markdownToHtml(md)).toContain('<table>');
     const fixed = autoFixArticle(sample({ sections: [{ heading: 'So sánh', level: 2, body: 'Xem bảng:\n| A | B |\n| --- | --- |\n| 1 | 2 |' }] }));
     expect(fixed.sections[0]!.body).toBe('Xem bảng:\n\n| A | B |\n| --- | --- |\n| 1 | 2 |');
+  });
+
+  it('bảng model viết trên một dòng (hàng nối bằng "| |", câu dẫn đứng trước) được tách hàng và thêm dòng phân cách', () => {
+    const inline = 'Bảng dưới đây tổng hợp dữ liệu Google Maps: sao, số đánh giá, giá. | Quán | Sao | Số đánh giá | Giá | | Ốc Cô Ba | 4.7 | 132 | 100-300 đ | | Hải Sản - Quán Ốc Thảo | 4.5 | 150 | | | Quán Ốc Thành | 4.1 | 160 | dưới 100.000 đ |';
+    const md = repairInlineTables(inline);
+    expect(md).toBe(
+      [
+        'Bảng dưới đây tổng hợp dữ liệu Google Maps: sao, số đánh giá, giá.',
+        '',
+        '| Quán | Sao | Số đánh giá | Giá |',
+        '| --- | --- | --- | --- |',
+        '| Ốc Cô Ba | 4.7 | 132 | 100-300 đ |',
+        '| Hải Sản - Quán Ốc Thảo | 4.5 | 150 |  |',
+        '| Quán Ốc Thành | 4.1 | 160 | dưới 100.000 đ |',
+      ].join('\n'),
+    );
+    const html = markdownToHtml(md);
+    expect(html).toContain('<table>');
+    expect(html).toContain('<td>Quán Ốc Thành</td>');
+    // Bảng nhiều dòng nhưng thiếu dòng phân cách cũng được chèn
+    expect(ensureTableSeparators('| A | B |\n| 1 | 2 |')).toBe('| A | B |\n| --- | --- |\n| 1 | 2 |');
+    expect(ensureTableSeparators('| A | B |\n| --- | --- |\n| 1 | 2 |')).toBe('| A | B |\n| --- | --- |\n| 1 | 2 |');
+    // Văn xuôi có một hai dấu gạch đứng thì giữ nguyên
+    expect(repairInlineTables('Giá 100 | 200 đồng, tùy | quán.')).toBe('Giá 100 | 200 đồng, tùy | quán.');
+    // Qua autoFix: mục có bảng một dòng dựng ra bảng thật
+    const fixed = autoFixArticle(sample({ sections: [{ heading: 'So sánh', level: 2, body: inline }] }));
+    expect(markdownToHtml(fixed.sections[0]!.body)).toContain('<th>Quán</th>');
   });
 
   it('bài tổng hợp quán: trần số từ nới theo số quán, ít quán thì giữ cài đặt', () => {
