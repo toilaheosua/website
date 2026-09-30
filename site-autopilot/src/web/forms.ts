@@ -38,6 +38,8 @@ export function parseNewSite(body: FormBody, defaults: GeneralSettings): { domai
     targetCountries: parseList(str(body, 'targetCountries')).map((c) => c.toUpperCase()),
     notes: str(body, 'notes'),
     styleSamples: str(body, 'styleSamples'),
+    postEngine: str(body, 'postEngine') || 'tool',
+    brandMention: str(body, 'brandMention') !== '0',
   };
   const brief = SiteBriefSchema.safeParse(briefRaw);
   if (!brief.success) errors.push(...brief.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`));
@@ -74,6 +76,8 @@ export function parseBriefEdit(body: FormBody, current: SiteBrief): SiteBrief {
     targetCountries: parseList(str(body, 'targetCountries')).map((c) => c.toUpperCase()),
     notes: str(body, 'notes'),
     styleSamples: str(body, 'styleSamples'),
+    postEngine: str(body, 'postEngine') || 'tool',
+    brandMention: str(body, 'brandMention') !== '0',
   });
 }
 

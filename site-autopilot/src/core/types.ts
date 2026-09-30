@@ -30,6 +30,10 @@ export const SiteBriefSchema = z.object({
   notes: z.string().default(''),
   /** Đoạn văn mẫu đã được chủ thương hiệu duyệt: AI học giọng, cách xưng hô, mức chuyên môn từ đây */
   styleSamples: z.string().default(''),
+  /** Máy viết bài blog: tool = Tool Viết Content (nghiên cứu top Google, 8 bước), fast = bộ viết nhanh trong bot */
+  postEngine: z.enum(['tool', 'fast']).default('tool'),
+  /** Bài từ tool có thêm đoạn nhắc thương hiệu kèm liên kết nội bộ (site vệ tinh nên tắt) */
+  brandMention: z.boolean().default(true),
 });
 export type SiteBrief = z.infer<typeof SiteBriefSchema>;
 
@@ -229,7 +233,7 @@ export type WafSettings = z.infer<typeof WafSettingsSchema>;
 
 export const GeneralSettingsSchema = z.object({
   defaultLanguage: z.enum(['vi', 'en']).default('vi'),
-  defaultPostsCount: z.number().int().min(0).max(20).default(5),
+  defaultPostsCount: z.number().int().min(0).max(20).default(3),
   defaultContentStyle: z.enum(['auto', 'story', 'expert', 'playbook']).default('auto'),
   defaultTargetCountries: z.array(z.string()).default(['VN']),
   autoSyncEntity: z.boolean().default(true),

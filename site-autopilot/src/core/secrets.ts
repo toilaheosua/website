@@ -8,7 +8,7 @@ import { nowIso } from './util.js';
 const log = createLogger('secrets');
 
 /** Các khóa bí mật có thể nhập trên dashboard. Giá trị được mã hóa AES-256-GCM trước khi lưu DB. */
-export const SECRET_NAMES = ['cloudflare_token', 'anthropic_key', 'pexels_key', 'google_sa_json', 'google_maps_key', 'telegram_token'] as const;
+export const SECRET_NAMES = ['cloudflare_token', 'anthropic_key', 'pexels_key', 'google_sa_json', 'google_maps_key', 'telegram_token', 'openrouter_key', 'deepseek_key', 'serpapi_key', 'google_cse_key', 'google_cse_cx', 'originality_key'] as const;
 export type SecretName = (typeof SECRET_NAMES)[number];
 
 export const SECRET_LABELS: Record<SecretName, string> = {
@@ -18,6 +18,12 @@ export const SECRET_LABELS: Record<SecretName, string> = {
   google_sa_json: 'Google service account JSON',
   google_maps_key: 'Google Maps Platform API key',
   telegram_token: 'Telegram bot token',
+  openrouter_key: 'OpenRouter API key (viết content)',
+  deepseek_key: 'DeepSeek API key (viết content)',
+  serpapi_key: 'SerpAPI key (tìm top Google)',
+  google_cse_key: 'Google Custom Search API key',
+  google_cse_cx: 'Google Programmable Search Engine ID (cx)',
+  originality_key: 'Originality.ai API key',
 };
 
 /**

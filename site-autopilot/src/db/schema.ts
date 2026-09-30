@@ -86,6 +86,19 @@ CREATE TABLE IF NOT EXISTS site_pages (
   UNIQUE (site_id, slug)
 );
 
+CREATE TABLE IF NOT EXISTS tool_runs (
+  run_id INTEGER PRIMARY KEY,
+  site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  slug TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL DEFAULT 'web',
+  status TEXT NOT NULL DEFAULT 'running',
+  imported_page_id INTEGER,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
 CREATE TABLE IF NOT EXISTS site_images (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,

@@ -121,7 +121,7 @@ export interface Integrations {
   telegram: { botToken: string; chatId: string; source: IntegrationSource };
 }
 
-export type SecretKeyName = 'cloudflare_token' | 'anthropic_key' | 'pexels_key' | 'google_sa_json' | 'google_maps_key' | 'telegram_token';
+export type SecretKeyName = 'cloudflare_token' | 'anthropic_key' | 'pexels_key' | 'google_sa_json' | 'google_maps_key' | 'telegram_token' | 'openrouter_key' | 'deepseek_key' | 'serpapi_key' | 'google_cse_key' | 'google_cse_cx' | 'originality_key';
 
 export interface SecretReader {
   get(name: SecretKeyName): string;

@@ -106,7 +106,7 @@ describe('cổng kiểm duyệt chất lượng (mock)', () => {
     await runToEnd(worker, db, id);
     expect(db.getSite(id)?.status).toBe('live');
     // Giả lập trang viết trước khi có cổng kiểm duyệt: xóa biên bản, làm hỏng một trang
-    const about = db.listPages(id).find((p) => p.kind === 'about')!;
+    const about = db.listPages(id).find((p) => p.kind === 'contact')!;
     for (const p of db.listPages(id)) db.setPageStatus(p.id, 'published', null);
     db.upsertPage({ site_id: id, kind: about.kind, slug: about.slug, title: about.title, content: { ...about.content, intro: `MOCK_BAD ${about.content.intro}` } });
     expect(db.getPage(about.id)?.review).toBeNull();

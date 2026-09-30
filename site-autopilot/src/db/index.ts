@@ -119,6 +119,20 @@ export interface PageRow {
   updated_at: string;
 }
 
+/** Bài do Tool Viết Content viết cho một site: running → imported | failed | fallback */
+export interface ToolRunRow {
+  run_id: number;
+  site_id: number;
+  slug: string;
+  title: string;
+  kind: string;
+  status: 'running' | 'imported' | 'failed' | 'fallback';
+  imported_page_id: number | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Page extends Omit<PageRow, 'content' | 'review'> {
   content: PageContent;
   review: ContentReview | null;
@@ -494,6 +508,39 @@ export class Db {
 
   deletePagesOfSite(siteId: number): void {
     this.raw.prepare('DELETE FROM site_pages WHERE site_id = ?').run(siteId);
+  }
+
+  /* ---------------- tool_runs (Tool Viết Content) ---------------- */
+
+  addToolRun(r: { run_id: number; site_id: number; slug: string; title: string; kind: string }): ToolRunRow {
+    this.raw.prepare('INSERT INTO tool_runs (run_id, site_id, slug, title, kind) VALUES (?,?,?,?,?)').run(r.run_id, r.site_id, r.slug, r.title, r.kind);
+    return this.getToolRun(r.run_id)!;
+  }
+
+  getToolRun(runId: number): ToolRunRow | undefined {
+    return this.raw.prepare('SELECT * FROM tool_runs WHERE run_id = ?').get(runId) as unknown as ToolRunRow | undefined;
+  }
+
+  getToolRunBySlug(siteId: number, slug: string): ToolRunRow | undefined {
+    return this.raw.prepare('SELECT * FROM tool_runs WHERE site_id = ? AND slug = ? ORDER BY run_id DESC LIMIT 1').get(siteId, slug) as unknown as ToolRunRow | undefined;
+  }
+
+  listToolRuns(siteId?: number): ToolRunRow[] {
+    if (siteId !== undefined) return this.raw.prepare('SELECT * FROM tool_runs WHERE site_id = ? ORDER BY run_id DESC').all(siteId) as unknown as ToolRunRow[];
+    return this.raw.prepare('SELECT * FROM tool_runs ORDER BY run_id DESC').all() as unknown as ToolRunRow[];
+  }
+
+  updateToolRun(runId: number, patch: Partial<Pick<ToolRunRow, 'status' | 'imported_page_id' | 'error' | 'slug' | 'title'>>): void {
+    const cols: string[] = [];
+    const vals: unknown[] = [];
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined) continue;
+      cols.push(`${k}=?`);
+      vals.push(v);
+    }
+    cols.push('updated_at=?');
+    vals.push(nowIso(), runId);
+    this.raw.prepare(`UPDATE tool_runs SET ${cols.join(', ')} WHERE run_id=?`).run(...(vals as (string | number | null)[]));
   }
 
   /* ---------------- images ---------------- */

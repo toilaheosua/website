@@ -7,7 +7,11 @@ export interface Flash {
   text: string;
 }
 
-export function Page(props: { title: string; active?: string; mock?: boolean; flash?: Flash | null; children?: Child; refresh?: number }) {
+export function Page(props: { title: string; active?: string; mock?: boolean; flash?: Flash | null; children?: Child; refresh?: number; pollUrl?: string; pollKey?: string }) {
+  // Tải lại trang khi trạng thái phía server đổi (hỏi nhẹ mỗi 4 giây), không tải lại khi đang gõ
+  const poll = props.pollUrl
+    ? `(function(){var key=${JSON.stringify(props.pollKey ?? '')};function typing(){var a=document.activeElement;return a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT')}function tick(){fetch(${JSON.stringify(props.pollUrl)},{cache:'no-store'}).then(function(r){return r.json()}).then(function(j){if(j.key!==key){if(typing()){setTimeout(tick,4000)}else{location.reload()}}else{setTimeout(tick,4000)}}).catch(function(){setTimeout(tick,8000)})}setTimeout(tick,4000)})();`
+    : '';
   return (
     <html lang="vi">
       <head>
@@ -36,6 +40,9 @@ export function Page(props: { title: string; active?: string; mock?: boolean; fl
             <a href="/logs" class={props.active === 'logs' ? 'active' : ''}>
               Log
             </a>
+            <a href="/content" class={props.active === 'content' ? 'active' : ''}>
+              Viết content
+            </a>
             <a href="/settings" class={props.active === 'settings' ? 'active' : ''}>
               Cài đặt
             </a>
@@ -54,6 +61,7 @@ export function Page(props: { title: string; active?: string; mock?: boolean; fl
           {props.flash ? <div class={`alert ${props.flash.type}`}>{props.flash.text}</div> : null}
           {props.children}
         </main>
+        {poll ? <script>{raw(poll)}</script> : null}
       </body>
     </html>
   );

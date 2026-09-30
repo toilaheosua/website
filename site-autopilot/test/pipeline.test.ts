@@ -81,7 +81,7 @@ describe('pipeline end-to-end (mock)', () => {
     expect(site.plan?.posts).toHaveLength(3);
 
     const pages = db.listPages(id);
-    expect(pages.map((p) => p.kind).sort()).toEqual(['about', 'blog', 'contact', 'home', 'post', 'post', 'post', 'privacy', 'services'].sort());
+    expect(pages.map((p) => p.kind).sort()).toEqual(['blog', 'contact', 'home', 'post', 'post', 'post', 'privacy'].sort());
 
     // Cloudflare mock nhận đủ cấu hình
     const cf = services.cloudflare as MockCloudflare;
@@ -102,8 +102,8 @@ describe('pipeline end-to-end (mock)', () => {
     expect(home).toContain('"LocalBusiness"');
     expect(home).toContain('0909 123 456');
     expect(home).toContain('rel="canonical" href="https://dienlanhminh.com/"');
-    expect(fs.existsSync(path.join(out, 'gioi-thieu', 'index.html'))).toBe(true);
-    expect(fs.existsSync(path.join(out, 'dich-vu', 'index.html'))).toBe(true);
+    expect(fs.existsSync(path.join(out, 'lien-he', 'index.html'))).toBe(true);
+    expect(fs.existsSync(path.join(out, 'dich-vu', 'index.html'))).toBe(false);
     expect(fs.existsSync(path.join(out, 'lien-he', 'index.html'))).toBe(true);
     expect(fs.existsSync(path.join(out, 'chinh-sach-bao-mat', 'index.html'))).toBe(true);
     expect(fs.existsSync(path.join(out, 'favicon.ico'))).toBe(true);
@@ -122,7 +122,9 @@ describe('pipeline end-to-end (mock)', () => {
     expect(postHtml).toContain('class="toc"');
     expect(postHtml).toContain('<blockquote>');
     expect(postHtml).toContain('<table>');
-    expect(postHtml).toContain('href="/dich-vu/"');
+    // Site mới không có trang dịch vụ: liên kết /dich-vu/ trong nội dung mock bị lọc, /lien-he/ được giữ
+    expect(postHtml).toContain('href="/lien-he/"');
+    expect(postHtml).not.toContain('href="/dich-vu/"');
     expect(site.plan?.contentStyle).toBe('playbook');
     const imgs = db.listImages(id);
     expect(imgs.length).toBeGreaterThan(5);

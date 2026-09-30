@@ -262,6 +262,19 @@ export function NewSiteForm(props: { servers: ServerRow[]; general: GeneralSetti
           <label>
             <input type="checkbox" name="useStockImages" value="1" checked={val('useStockImages', '1') === '1'} /> Dùng ảnh stock Pexels cho vị trí chưa có ảnh thật
           </label>
+          <label>Máy viết bài blog</label>
+          <select name="postEngine">
+            <option value="tool" selected={val('postEngine', 'tool') === 'tool'}>
+              Tool Viết Content: nghiên cứu top Google, 8 bước, 15 đến 40 phút một bài (khuyên dùng)
+            </option>
+            <option value="fast" selected={val('postEngine', 'tool') === 'fast'}>
+              Bộ viết nhanh trong bot: vài phút một bài, không nghiên cứu nguồn
+            </option>
+          </select>
+          <label>
+            <input type="checkbox" name="brandMention" value="1" checked={val('brandMention', '1') === '1'} /> Bài từ tool có đoạn nhắc thương hiệu kèm liên kết nội bộ (site vệ tinh nên bỏ tick)
+            <input type="hidden" name="brandMention" value="0" />
+          </label>
           <div class="help">Bỏ tick nếu chỉ muốn dùng ảnh thật của bạn: sau khi tạo site, vào mục Kho ảnh để tải lên hoặc nhập từ Google Maps.</div>
           <label>Kiểu viết nội dung</label>
           <select name="contentStyle">
@@ -381,7 +394,20 @@ export function NewSiteForm(props: { servers: ServerRow[]; general: GeneralSetti
 /*  Chi tiết site                                                       */
 /* ------------------------------------------------------------------ */
 
-export function SiteDetail(props: { site: Site; steps: StepRow[]; defs: StepDef[]; pages: PageRow[]; logs: LogRow[]; jobs: JobRow[]; config: AppConfig; server: ServerRow | undefined }) {
+export interface ToolRunView {
+  run_id: number;
+  title: string;
+  kind: string;
+  status: string;
+  runStatus: string;
+  currentStep: string | null;
+  imported_page_id: number | null;
+  error: string | null;
+}
+
+const TOOL_RUN_LABEL: Record<string, string> = { queued: 'Trong hàng đợi', running: 'Đang viết', waiting_places: 'Chờ duyệt quán', waiting_outline: 'Chờ duyệt bố cục', waiting_ai_score: 'Chờ điểm AI', done: 'Viết xong', needs_review: 'Xong, chưa đạt kiểm tra', failed: 'Lỗi', cancelled: 'Đã hủy', unknown: 'Không rõ' };
+
+export function SiteDetail(props: { site: Site; steps: StepRow[]; defs: StepDef[]; pages: PageRow[]; logs: LogRow[]; jobs: JobRow[]; config: AppConfig; server: ServerRow | undefined; toolRuns?: ToolRunView[]; finishedRuns?: { id: number; keyword: string; kind: string; status: string }[] }) {
   const { site, steps, defs, pages, logs, jobs } = props;
   const byId = new Map(steps.map((s) => [s.step, s]));
   const p = progressOf(defs, steps);
@@ -580,15 +606,100 @@ export function SiteDetail(props: { site: Site; steps: StepRow[]; defs: StepDef[
             <form method="post" action={`/sites/${site.id}/jobs/generate_post`} style="margin-top:14px">
               <label>Viết thêm bài blog</label>
               <div class="row">
-                <input type="text" name="topic" placeholder="Chủ đề (để trống = AI tự đề xuất)" />
+                <select name="engine">
+                  <option value="tool" selected={site.brief.postEngine !== 'fast'}>
+                    Tool Viết Content (nghiên cứu top Google, 15 đến 40 phút một bài)
+                  </option>
+                  <option value="fast" selected={site.brief.postEngine === 'fast'}>
+                    Bộ viết nhanh trong bot (vài phút)
+                  </option>
+                </select>
+                <select name="kind">
+                  <option value="web">Bài theo từ khóa</option>
+                  <option value="roundup">Tổng hợp quán theo khu vực (Google Maps)</option>
+                  <option value="brand">Giới thiệu thương hiệu (link Google Maps)</option>
+                </select>
+              </div>
+              <div class="row" style="margin-top:6px">
+                <input type="text" name="topic" placeholder="Từ khóa hoặc chủ đề (để trống = AI tự đề xuất)" />
                 <div class="actions">
-                  <input type="number" name="count" min="1" max="5" value="1" style="width:70px" />
+                  <input type="number" name="count" min="1" max="5" value="1" style="width:70px" title="Số bài khi để AI tự đề xuất" />
                   <button class="btn sm" type="submit" disabled={!site.plan}>
                     Viết
                   </button>
                 </div>
               </div>
+              <details style="margin-top:6px">
+                <summary class="small muted">Tùy chọn cho bài tổng hợp quán / giới thiệu thương hiệu</summary>
+                <div class="row" style="margin-top:6px">
+                  <input type="text" name="dish" placeholder="Món hoặc loại quán (tổng hợp quán), ví dụ: hủ tiếu" />
+                  <input type="text" name="area" placeholder={`Khu vực (trống = ${site.brief.location || 'khu vực trong brief'})`} />
+                </div>
+                <input type="text" name="mapsUrl" placeholder="Link Google Maps của quán (giới thiệu thương hiệu; trống = lấy từ Entity SEO)" style="margin-top:6px" />
+              </details>
             </form>
+            {props.toolRuns?.length ? (
+              <div style="margin-top:12px">
+                <label>Bài đang viết bằng Tool Viết Content</label>
+                <table class="small">
+                  <tbody>
+                    {props.toolRuns.slice(0, 8).map((r) => (
+                      <tr>
+                        <td>
+                          <a href={`/runs/${r.run_id}`}>{r.title}</a>
+                          <div class="muted">{r.kind === 'web' ? 'từ khóa' : r.kind === 'roundup' ? 'tổng hợp quán' : 'thương hiệu'}</div>
+                        </td>
+                        <td>
+                          {r.status === 'imported' ? (
+                            <span class="badge done">Đã nhập</span>
+                          ) : r.status === 'failed' || r.status === 'fallback' ? (
+                            <span class="badge failed" title={r.error ?? ''}>
+                              {r.status === 'fallback' ? 'Dùng bộ viết nhanh' : 'Lỗi'}
+                            </span>
+                          ) : (
+                            <span class={`badge ${r.runStatus === 'done' || r.runStatus === 'needs_review' ? 'waiting' : 'running'}`}>
+                              {TOOL_RUN_LABEL[r.runStatus] ?? r.runStatus}
+                              {r.currentStep ? ` · ${r.currentStep}` : ''}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {r.imported_page_id ? (
+                            <a class="btn secondary sm" href={`/sites/${site.id}/pages/${r.imported_page_id}`}>
+                              Xem bài
+                            </a>
+                          ) : r.runStatus === 'done' || r.runStatus === 'needs_review' ? (
+                            <form method="post" action={`/sites/${site.id}/posts/from-run`} class="inline">
+                              <input type="hidden" name="runId" value={String(r.run_id)} />
+                              <button class="btn sm" type="submit">
+                                Nhập ngay
+                              </button>
+                            </form>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+            {props.finishedRuns?.length ? (
+              <form method="post" action={`/sites/${site.id}/posts/from-run`} style="margin-top:10px">
+                <label>Nhập bài đã viết sẵn trong mục Viết content</label>
+                <div class="row">
+                  <select name="runId">
+                    {props.finishedRuns.map((r) => (
+                      <option value={String(r.id)}>
+                        #{r.id} · {r.keyword} ({r.kind === 'web' ? 'từ khóa' : r.kind === 'roundup' ? 'tổng hợp quán' : 'thương hiệu'}{r.status === 'needs_review' ? ', chưa đạt kiểm tra của tool' : ''})
+                      </option>
+                    ))}
+                  </select>
+                  <button class="btn secondary sm" type="submit">
+                    Nhập vào site
+                  </button>
+                </div>
+              </form>
+            ) : null}
             <details class="panel" style="margin-top:14px">
               <summary style="color:var(--err)">Xóa site</summary>
               <form method="post" action={`/sites/${site.id}/delete`} style="margin-top:8px">
@@ -1544,6 +1655,19 @@ export function EditBriefForm(props: { site: Site; servers: ServerRow[] }) {
         <label>
           <input type="checkbox" name="useStockImages" value="1" checked={b.useStockImages} /> Dùng ảnh stock Pexels cho vị trí chưa có ảnh thật
         </label>
+        <label>Máy viết bài blog</label>
+        <select name="postEngine">
+          <option value="tool" selected={b.postEngine !== 'fast'}>
+            Tool Viết Content: nghiên cứu top Google, 8 bước, 15 đến 40 phút một bài (khuyên dùng)
+          </option>
+          <option value="fast" selected={b.postEngine === 'fast'}>
+            Bộ viết nhanh trong bot: vài phút một bài
+          </option>
+        </select>
+        <label>
+          <input type="checkbox" name="brandMention" value="1" checked={b.brandMention} /> Bài từ tool có đoạn nhắc thương hiệu kèm liên kết nội bộ (site vệ tinh nên bỏ tick)
+          <input type="hidden" name="brandMention" value="0" />
+        </label>
         <label>Ghi chú cho AI</label>
         <textarea name="notes">{b.notes}</textarea>
         <label>Đoạn văn mẫu đã duyệt (tùy chọn)</label>
@@ -1583,6 +1707,12 @@ export interface IntegrationView {
   google: SecretView & { ownerEmail: string; serviceAccountEmail: string };
   googleMaps: SecretView;
   telegram: SecretView & { chatId: string };
+  openrouter: SecretView;
+  deepseek: SecretView;
+  serpapi: SecretView;
+  originality: SecretView;
+  googleCse: SecretView;
+  googleCseCx: SecretView;
 }
 
 function SecretStatus(props: { v: SecretView }) {
@@ -1662,6 +1792,24 @@ export function IntegrationsForm(props: { integ: IntegrationView }) {
         <fieldset>
           <legend>Google Maps (nhập ảnh thật của quán, tùy chọn)</legend>
           <SecretField name="google_maps_key" label="Google Maps Platform API key" v={i.googleMaps} help="Google Cloud → APIs & Services → bật 'Places API (New)' → Credentials → API key. Cần gắn tài khoản thanh toán, dùng trong hạn mức miễn phí hàng tháng." />
+        </fieldset>
+        <fieldset>
+          <legend>Viết content (Tool Viết Content gộp trong bot)</legend>
+          <div class="row">
+            <SecretField name="openrouter_key" label="OpenRouter API key" v={i.openrouter} help="Nhà cung cấp model mặc định cho bài viết. https://openrouter.ai/settings/keys, nạp credit trả trước." />
+            <SecretField name="deepseek_key" label="DeepSeek API key (tùy chọn)" v={i.deepseek} help="platform.deepseek.com → API keys." />
+          </div>
+          <div class="row">
+            <SecretField name="serpapi_key" label="SerpAPI key" v={i.serpapi} help="Top 10 Google thật. serpapi.com → Dashboard → API key; gói miễn phí 100 lượt mỗi tháng, khoảng 3 bài." />
+            <SecretField name="originality_key" label="Originality.ai API key (tùy chọn)" v={i.originality} help="Chỉ khi có gói Enterprise; luồng tự động mặc định không chấm AI." />
+          </div>
+          <div class="row">
+            <SecretField name="google_cse_key" label="Google Custom Search API key (thay SerpAPI, tùy chọn)" v={i.googleCse} />
+            <SecretField name="google_cse_cx" label="Search Engine ID (cx)" v={i.googleCseCx} />
+          </div>
+          <div class="help">
+            Nhà cung cấp model, cách tìm kiếm, ngưỡng chất lượng của tool chỉnh ở <a href="/content/settings">Viết content → Cài đặt</a>.
+          </div>
         </fieldset>
         <fieldset>
           <legend>Telegram cảnh báo (tùy chọn)</legend>

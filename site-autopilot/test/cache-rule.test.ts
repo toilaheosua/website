@@ -72,17 +72,17 @@ describe('Cache Everything', () => {
     const app = createApp({ db, config, services, worker, steps: STEPS });
     const login = await app.request('/login', { method: 'POST', body: new URLSearchParams({ user: 'admin', password: 'x', next: '/' }), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
     const cookie = login.headers.get('set-cookie')?.split(';')[0] ?? '';
-    const about = db.listPages(id).find((p) => p.kind === 'about')!;
+    const about = db.listPages(id).find((p) => p.kind === 'contact')!;
     const res = await app.request(`/sites/${id}/pages/${about.id}/meta`, { method: 'POST', headers: { cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ title: 'Giới thiệu mới về quán hủ tiếu Ông Giáo', metaDescription: about.content.metaDescription, h1: 'Giới thiệu mới', targetKeyword: '', heroImageAlt: '' }) });
     expect(res.status).toBe(302);
     await worker.tick();
     await worker.drain(30_000);
     expect(cf.purgedAll).toBe(0);
-    expect(cf.purged).toContain('https://cache.test/gioi-thieu/');
-    expect(cf.purged).toContain('https://www.cache.test/gioi-thieu/');
+    expect(cf.purged).toContain('https://cache.test/lien-he/');
+    expect(cf.purged).toContain('https://www.cache.test/lien-he/');
     // sitemap không đổi (cùng ngày cập nhật) nên không bị xóa cache: chỉ đúng tệp đổi
     expect(cf.purged).toHaveLength(2);
-    expect(cf.purged).not.toContain('https://cache.test/lien-he/');
+    expect(cf.purged).not.toContain('https://cache.test/chinh-sach-bao-mat/');
     const log = db.listLogs({ siteId: id, limit: 30 }).find((l) => /xóa bộ đệm Cloudflare cho/i.test(l.message));
     expect(log).toBeDefined();
 

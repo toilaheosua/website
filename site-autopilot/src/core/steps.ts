@@ -310,11 +310,9 @@ export interface RequiredPage {
 
 export function requiredPages(brief: { siteType: 'business' | 'blog'; language: 'vi' | 'en' }, plan: SitePlan): RequiredPage[] {
   const r = ROUTES[brief.language];
-  const list: RequiredPage[] = [
-    { kind: 'home', slug: '', sortOrder: 0 },
-    { kind: 'about', slug: r.about, sortOrder: 1 },
-  ];
-  if (brief.siteType === 'business') list.push({ kind: 'services', slug: r.services, sortOrder: 2 });
+  // Site mới chỉ có 3 trang cố định (trang chủ, liên hệ, chính sách) + trang danh sách blog và các bài viết.
+  // Trang giới thiệu và dịch vụ của site cũ vẫn được giữ và dựng nếu đã có trong DB.
+  const list: RequiredPage[] = [{ kind: 'home', slug: '', sortOrder: 0 }];
   list.push({ kind: 'blog', slug: r.blog, sortOrder: 3 });
   plan.posts.forEach((post, i) => list.push({ kind: 'post', slug: `${r.blog}/${post.slug ?? slugify(post.title)}`, sortOrder: 10 + i, post }));
   list.push({ kind: 'contact', slug: r.contact, sortOrder: 20 });
@@ -329,13 +327,21 @@ export function internalLinksFor(ctx: StepContext, plan: SitePlan, currentSlug: 
   const links: InternalLink[] = [];
   const pages = requiredPages(ctx.site.brief, plan);
   const labels: Record<string, string> = { home: t.home, about: t.about, services: t.services, blog: t.blog, contact: t.contact, privacy: t.privacy };
+  const existingPages = ctx.db.listPages(ctx.site.id);
+  const hasServicesPage = existingPages.some((p) => p.kind === 'services');
   for (const p of pages) {
     if (p.slug === currentSlug) continue;
     if (p.kind === 'post') continue;
     links.push({ path: p.slug ? `/${p.slug}/` : '/', label: labels[p.kind] ?? p.kind });
-    if (p.kind === 'services') for (const s of plan.services) links.push({ path: `/${r.services}/#${s.slug ?? slugify(s.name)}`, label: `${t.services}: ${s.name}` });
   }
-  for (const p of ctx.db.listPages(ctx.site.id)) {
+  // Trang giới thiệu / dịch vụ chỉ còn ở site cũ; dịch vụ ở site mới là các mục neo trên trang chủ
+  for (const p of existingPages) {
+    if ((p.kind === 'about' || p.kind === 'services') && p.slug !== currentSlug && !links.some((l) => l.path === `/${p.slug}/`)) links.push({ path: `/${p.slug}/`, label: labels[p.kind] ?? p.kind });
+  }
+  if (ctx.site.brief.siteType === 'business') {
+    for (const s of plan.services) links.push({ path: hasServicesPage ? `/${r.services}/#${s.slug ?? slugify(s.name)}` : `/#${s.slug ?? slugify(s.name)}`, label: `${t.services}: ${s.name}` });
+  }
+  for (const p of existingPages) {
     if (p.kind === 'post' && p.slug !== currentSlug) links.push({ path: `/${p.slug}/`, label: `Bài: ${p.title}` });
   }
   return links.slice(0, 40);
@@ -444,13 +450,54 @@ const genContent: StepDef = {
     if (todo.length === 0) return { status: 'done', message: `Đủ ${required.length} trang, không sinh thêm` };
     let done = 0;
     let held = 0;
+    let pending = 0;
     const titles = [...existing.values()].map((p) => p.title);
+    const tool = ctx.site.brief.postEngine === 'tool' ? ctx.services.contentTool : undefined;
     for (const req of todo) {
+      // Bài blog: giao Tool Viết Content (nghiên cứu top Google), bot chờ tool viết xong rồi nhập vào site
+      if (req.kind === 'post' && tool && req.post) {
+        const row = ctx.db.getToolRunBySlug(ctx.site.id, req.slug);
+        if (!row) {
+          const { run } = tool.createRunForSite(ctx.site, { kind: 'web', keyword: req.post.targetKeyword || req.post.title, title: req.post.title, angle: req.post.angle, slug: req.slug });
+          ctx.log('info', `Giao Tool Viết Content viết bài "${req.post.title}" (#${run.id})`);
+          pending++;
+          continue;
+        }
+        if (row.status === 'imported') continue;
+        if (row.status === 'failed') {
+          ctx.log('warn', `Tool Viết Content không viết được "${req.post.title}" (${row.error ?? 'lỗi'}), dùng bộ viết nhanh thay thế`);
+          const page = await generateAndSavePage(ctx, req, titles);
+          titles.push(page.title);
+          ctx.db.updateToolRun(row.run_id, { status: 'fallback' });
+          done++;
+          if (page.status === 'needs_review') held++;
+          continue;
+        }
+        if (row.status === 'fallback') continue;
+        const run = tool.db.getRun(row.run_id);
+        if (run && (run.status === 'done' || run.status === 'needs_review')) {
+          const page = await tool.importRun(ctx.site, run, req.slug);
+          ctx.log('info', `Nhập bài "${page.title}" từ Tool Viết Content #${run.id}`);
+          done++;
+          if (page.status === 'needs_review') held++;
+          continue;
+        }
+        if (!run || run.status === 'failed' || run.status === 'cancelled') {
+          ctx.db.updateToolRun(row.run_id, { status: 'failed', error: run?.error ?? 'không còn trong tool' });
+          pending++; // vòng sau sẽ dùng bộ viết nhanh
+          continue;
+        }
+        pending++;
+        continue;
+      }
       ctx.log('info', `Đang viết ${req.kind}${req.slug ? ' /' + req.slug : ''} (${done + 1}/${todo.length})`);
       const page = await generateAndSavePage(ctx, req, titles);
       titles.push(page.title);
       done++;
       if (page.status === 'needs_review') held++;
+    }
+    if (pending) {
+      return { status: 'waiting', retryInMs: ctx.config.isMock ? 200 : 60_000, message: `Tool Viết Content đang viết ${pending} bài (mỗi bài 15 đến 40 phút); ${done} trang khác đã xong. Theo dõi ở mục Viết content.` };
     }
     const usage = ctx.services.content.usage();
     const heldNote = held ? `; ${held} trang chưa đạt kiểm duyệt, vào Nội dung để duyệt hoặc sinh lại` : '';

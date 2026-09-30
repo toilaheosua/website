@@ -7,6 +7,7 @@ import { STEPS } from './core/steps.js';
 import { Worker } from './core/worker.js';
 import { createApp } from './web/server.js';
 import { createLogger } from './core/logger.js';
+import { ContentToolBridge } from './content/bridge.js';
 
 const log = createLogger('main');
 
@@ -17,17 +18,20 @@ export function boot() {
   const db = new Db(config.dbPath);
   const services = createServices(config, db);
   ensureDefaultServer(config, db);
+  // Tool Viết Content chạy cùng tiến trình, khóa dùng chung, giao diện dưới /content
+  services.contentTool = new ContentToolBridge({ db, config, services });
   const worker = new Worker({ db, config, services, steps: STEPS });
   const app = createApp({ db, config, services, worker, steps: STEPS });
   return { config, db, services, worker, app };
 }
 
-const { config, db, worker, app } = boot();
+const { config, db, services, worker, app } = boot();
 
 if (!config.SESSION_SECRET) log.warn('SESSION_SECRET trống: phiên đăng nhập vẫn hoạt động (lưu trong DB) nhưng nên đặt để tăng an toàn.');
 if (!config.ADMIN_PASSWORD) log.info('ADMIN_PASSWORD trống: nếu chưa đặt mật khẩu trên dashboard, lần mở đầu tiên sẽ hiện trang thiết lập tài khoản.');
 
 worker.start();
+services.contentTool?.start();
 const server = serve({ fetch: app.fetch, hostname: config.HOST, port: config.PORT }, (info) => {
   log.info(`Dashboard chạy tại http://${info.address}:${info.port}`, { mock: config.isMock, dataDir: config.dataDir });
 });
@@ -35,6 +39,7 @@ const server = serve({ fetch: app.fetch, hostname: config.HOST, port: config.POR
 const shutdown = () => {
   log.info('Đang tắt...');
   worker.stop();
+  services.contentTool?.stop();
   server.close();
   db.close();
   process.exit(0);

@@ -186,6 +186,8 @@ export interface Services {
   secrets: SecretStoreLike;
   /** Khóa và cấu hình dịch vụ hiện hành (dashboard ưu tiên hơn .env) */
   integrations: () => IntegrationsLike;
+  /** Tool Viết Content gộp trong bot; gán sau khi khởi động (undefined trong một số test) */
+  contentTool?: import('../content/bridge.js').ContentToolBridge;
 }
 
 export interface SecretStoreLike {

@@ -168,6 +168,35 @@ const handlers: Record<string, Handler> = {
     const existing = ctx.db.listPages(ctx.site.id);
     const existingTitles = existing.map((p) => p.title);
     const r = ROUTES[ctx.site.brief.language];
+    const engine = payload.engine === 'fast' ? 'fast' : payload.engine === 'tool' ? 'tool' : ctx.site.brief.postEngine;
+    const tool = engine === 'tool' ? env.services.contentTool : undefined;
+    if (tool) {
+      // Giao Tool Viết Content: bài xong sẽ tự nhập vào site và dựng lại (onRunFinished)
+      const kind = payload.kind === 'roundup' || payload.kind === 'brand' ? payload.kind : 'web';
+      const dish = typeof payload.dish === 'string' ? payload.dish.trim() : '';
+      const area = typeof payload.area === 'string' ? payload.area.trim() : '';
+      const mapsUrl = typeof payload.mapsUrl === 'string' ? payload.mapsUrl.trim() : '';
+      let inputs: { kind: 'web' | 'roundup' | 'brand'; keyword: string; title?: string; angle?: string; dish?: string; area?: string; mapsUrl?: string }[] = [];
+      if (kind === 'roundup') {
+        if (!dish) throw new AppError('Bài tổng hợp quán cần "Món hoặc loại quán"');
+        inputs = [{ kind, keyword: `${dish} ${area || ctx.site.brief.location}`.trim(), dish, area: area || ctx.site.brief.location }];
+      } else if (kind === 'brand') {
+        if (!mapsUrl && !ctx.site.entity.sameAs.googleMaps) throw new AppError('Bài giới thiệu thương hiệu cần link Google Maps (nhập ở form hoặc Entity SEO → Google Maps)');
+        inputs = [{ kind, keyword: ctx.site.brief.brandName, mapsUrl }];
+      } else if (topic) {
+        inputs = [{ kind: 'web', keyword: topic, title: topic }];
+      } else {
+        const topics = (await ctx.services.content.suggestPostTopics({ brief: ctx.site.brief, plan, existingTitles, count })).slice(0, count);
+        inputs = topics.map((t) => ({ kind: 'web' as const, keyword: t.targetKeyword || t.title, title: t.title, angle: t.angle }));
+      }
+      const runs: number[] = [];
+      for (const inp of inputs) {
+        const { run, row } = tool.createRunForSite(ctx.site, inp);
+        runs.push(run.id);
+        ctx.log('info', `Giao Tool Viết Content: "${row.title}" (#${run.id}, kiểu ${inp.kind})`);
+      }
+      return { engine: 'tool', runs };
+    }
     let topics = topic
       ? [{ title: topic, slug: slugify(topic), targetKeyword: topic, angle: String(payload.angle ?? 'Góc nhìn thực tế, hướng dẫn cụ thể'), imageQuery: String(payload.imageQuery ?? plan.heroImageQuery) }]
       : await ctx.services.content.suggestPostTopics({ brief: ctx.site.brief, plan, existingTitles, count });

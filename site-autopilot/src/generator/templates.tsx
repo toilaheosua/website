@@ -423,8 +423,9 @@ function heroBlock(ctx: RenderContext, c: PageContent, isBlog: boolean, props: R
   const styleProp = String(props.style ?? 'theme');
   const heroStyle = styleProp === 'theme' ? ctx.theme.heroStyle : styleProp;
   const secondary = props.secondaryButton !== false;
+  const hasServicesPage = ctx.pages.some((p) => p.kind === 'services');
   const secondaryBtn = secondary ? (
-    <a class="btn secondary" href={isBlog ? pageHref(ctx.routes.blog) : pageHref(ctx.routes.services)} {...ed(ctx, 'plan.ctaSecondary')}>
+    <a class="btn secondary" href={isBlog || !hasServicesPage ? (isBlog ? pageHref(ctx.routes.blog) : '#services') : pageHref(ctx.routes.services)} {...ed(ctx, 'plan.ctaSecondary')}>
       {ctx.plan.ctaSecondary}
     </a>
   ) : null;
@@ -682,8 +683,10 @@ export function renderHomeBlock(ctx: RenderContext, page: Page, b: HomeBlock, is
       return heroBlock(ctx, c, isBlog, p);
     case 'content':
       return contentBlock(ctx, c, p);
-    case 'services':
-      return <ServiceCards ctx={ctx} heading={String(p.heading ?? '').trim() || (isBlog ? ctx.t.mainTopics : ctx.t.ourServices)} linkBase={isBlog ? '' : pageHref(ctx.routes.services)} />;
+    case 'services': {
+      const hasServicesPage = ctx.pages.some((pg) => pg.kind === 'services');
+      return <ServiceCards ctx={ctx} heading={String(p.heading ?? '').trim() || (isBlog ? ctx.t.mainTopics : ctx.t.ourServices)} linkBase={isBlog || !hasServicesPage ? '' : pageHref(ctx.routes.services)} />;
+    }
     case 'posts':
       return postsBlock(ctx, p);
     case 'faq':

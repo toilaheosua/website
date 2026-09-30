@@ -56,6 +56,17 @@ Vào Cài đặt trên dashboard và bấm "Kiểm tra Cloudflare / aaPanel / SS
 
 Bước nào lỗi sẽ hiện màu đỏ với nguyên nhân. Bấm "Chạy lại" để chạy lại bước đó, "Từ đây" để chạy lại bước đó và mọi bước phía sau.
 
+## 4b. Viết content (Tool Viết Content gộp trong bot)
+
+Mục **Viết content** trên thanh điều hướng là Tool Viết Content tiếng Việt chạy cùng tiến trình, cùng đăng nhập, cùng kho khóa với bot (mã nguồn trong `src/content-tool/`, dữ liệu riêng ở `data/viet-content.sqlite` và `data/content-exports/`). Tool viết bài blog theo 8 bước: tìm top 10 Google (SerpAPI, Google CSE hoặc Claude web search) → tải nguồn → rút ghi chú có nguồn → bố cục → viết → biên tập → kiểm tra (cổng chất lượng, so trùng, AI duyệt) và tự sửa → xuất. Ba kiểu bài: theo từ khóa, tổng hợp quán theo khu vực (Google Maps), giới thiệu thương hiệu (link Maps).
+
+- **Máy viết bài blog** chọn trong brief từng site: `Tool Viết Content` (mặc định) hoặc `Bộ viết nhanh` trong bot. Site mới chỉ có 3 trang cố định (trang chủ, liên hệ, chính sách) cộng trang blog và các bài; trang giới thiệu, dịch vụ của site cũ vẫn giữ.
+- **Site mới**: bước Viết nội dung viết 3 trang cố định bằng bộ viết nhanh, giao các bài blog cho tool rồi chờ (mỗi bài 15 đến 40 phút, khoảng 30 lượt SerpAPI và 2 đến 3 USD model). Tool lỗi với bài nào thì bài đó dùng bộ viết nhanh để site không bị kẹt.
+- **Viết thêm bài** trong trang site: chọn máy viết, kiểu bài (từ khóa / tổng hợp quán / thương hiệu), từ khóa hoặc để AI đề xuất. Bài tool xong tự nhập vào site: ảnh vào Kho ảnh (tag `viet-content`, ảnh Google Maps tag `google-maps`, bạn tự chịu trách nhiệm bản quyền), đường dẫn ảnh đổi, ảnh đầu tiên làm ảnh đầu bài, đoạn nhắc thương hiệu kèm liên kết nội bộ (site doanh nghiệp, tắt bằng ô Nhắc thương hiệu trong brief), qua cổng kiểm tra bằng code của bot (không AI duyệt lần hai), rồi dựng lại và xóa cache đúng URL. Bảng "Bài đang viết bằng Tool Viết Content" theo dõi tiến độ; bài viết sẵn trong mục Viết content nhập vào site bằng ô "Nhập bài đã viết sẵn".
+- **Dữ kiện thật**: brief, Entity và Bộ Câu Hỏi của site được đưa vào tool làm ghi chú cho từng bài.
+- **Originality.ai**: luồng tự động không chấm AI (skipAiDetection bật sẵn), chỉ kiểm tra nội bộ và AI duyệt của tool; đổi ở Viết content → Cài đặt.
+- **Khóa**: OpenRouter (nhà cung cấp model mặc định), SerpAPI, DeepSeek, Google CSE, Originality nhập ở Cài đặt → Khóa API và dịch vụ → mục Viết content. Cài đặt quy trình và ngưỡng của tool ở Viết content → Cài đặt.
+
 ## 5. Quản lý hàng ngày
 
 - **Ba nút trong thư mục dự án (Windows)**: `MO-DASHBOARD.cmd` mở đường hầm SSH tới VPS và mở dashboard; `CAI-KHOA-SSH.cmd` cài khóa SSH một lần để hết hỏi mật khẩu; `CAP-NHAT-VPS.cmd` kéo bản mới từ GitHub và cài lại trên VPS. IP VPS ghi ở đầu mỗi file, đổi nếu chuyển server.

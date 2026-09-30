@@ -61,8 +61,8 @@ export function createApp(deps: WebDeps): Hono {
       return null;
     }
   };
-  const render = (c: Context, title: string, active: string, body: unknown, opts: { refresh?: number } = {}) =>
-    c.html(String(Page({ title, active, mock: config.isMock, flash: takeFlash(c), children: body as never, refresh: opts.refresh })));
+  const render = (c: Context, title: string, active: string, body: unknown, opts: { refresh?: number; pollUrl?: string; pollKey?: string } = {}) =>
+    c.html(String(Page({ title, active, mock: config.isMock, flash: takeFlash(c), children: body as never, refresh: opts.refresh, pollUrl: opts.pollUrl, pollKey: opts.pollKey })));
 
   const siteOr404 = (c: { req: { param: (k: string) => string | undefined } }) => {
     const id = Number.parseInt(c.req.param('id') ?? '', 10);
@@ -91,6 +91,12 @@ export function createApp(deps: WebDeps): Hono {
       google: { info: s.info('google_sa_json'), source: i.google.source, ownerEmail: i.google.ownerEmail, serviceAccountEmail },
       googleMaps: { info: s.info('google_maps_key'), source: i.googleMaps.source },
       telegram: { info: s.info('telegram_token'), source: i.telegram.source, chatId: i.telegram.chatId },
+      openrouter: { info: s.info('openrouter_key'), source: s.info('openrouter_key').set ? 'dashboard' : 'none' },
+      deepseek: { info: s.info('deepseek_key'), source: s.info('deepseek_key').set ? 'dashboard' : 'none' },
+      serpapi: { info: s.info('serpapi_key'), source: s.info('serpapi_key').set ? 'dashboard' : 'none' },
+      originality: { info: s.info('originality_key'), source: s.info('originality_key').set ? 'dashboard' : 'none' },
+      googleCse: { info: s.info('google_cse_key'), source: s.info('google_cse_key').set ? 'dashboard' : 'none' },
+      googleCseCx: { info: s.info('google_cse_cx'), source: s.info('google_cse_cx').set ? 'dashboard' : 'none' },
     };
   };
   const settingsProps = (tests?: Record<string, { ok: boolean; message: string }>) => ({
@@ -210,6 +216,8 @@ export function createApp(deps: WebDeps): Hono {
     const body = SiteDetail({
       site,
       steps: db.listSteps(site.id),
+      toolRuns: services.contentTool ? services.contentTool.runsForSite(site.id).map((r) => ({ run_id: r.run_id, title: r.title, kind: r.kind, status: r.status, runStatus: r.run?.status ?? 'unknown', currentStep: r.run?.current_step ?? null, imported_page_id: r.imported_page_id, error: r.error })) : [],
+      finishedRuns: services.contentTool ? services.contentTool.unassignedFinishedRuns().map((r) => ({ id: r.id, keyword: r.keyword, kind: r.options.kind, status: r.status })) : [],
       defs: steps,
       pages: db.listPages(site.id),
       logs: db.listLogs({ siteId: site.id, limit: 60 }),
@@ -273,7 +281,7 @@ export function createApp(deps: WebDeps): Hono {
     let payload: Record<string, unknown> | null = null;
     if (type === 'generate_post') {
       const body = (await c.req.parseBody()) as FormBody;
-      payload = { topic: str(body, 'topic'), count: Number.parseInt(str(body, 'count') || '1', 10) };
+      payload = { topic: str(body, 'topic'), count: Number.parseInt(str(body, 'count') || '1', 10), engine: str(body, 'engine'), kind: str(body, 'kind'), dish: str(body, 'dish'), area: str(body, 'area'), mapsUrl: str(body, 'mapsUrl') };
     }
     db.enqueueJob(type, site.id, payload, { dedupe: type !== 'generate_post', maxAttempts: type === 'health_check' ? 1 : 2 });
     flash(c, { type: 'info', text: 'Đã đưa vào hàng đợi. Theo dõi ở mục Tác vụ hoặc log.' });
@@ -477,6 +485,35 @@ export function createApp(deps: WebDeps): Hono {
     }
     return c.redirect(`/sites/${site.id}/pages`);
   });
+  /* ---------------- Tool Viết Content: nhập bài đã viết vào site ---------------- */
+  app.post('/sites/:id/posts/from-run', async (c) => {
+    const site = siteOr404(c);
+    if (!site) return c.notFound();
+    const tool = services.contentTool;
+    if (!tool) {
+      flash(c, { type: 'err', text: 'Mô-đun Viết content chưa khởi động.' });
+      return c.redirect(`/sites/${site.id}`);
+    }
+    const body = (await c.req.parseBody()) as FormBody;
+    const runId = Number.parseInt(str(body, 'runId'), 10);
+    const run = Number.isFinite(runId) ? tool.db.getRun(runId) : undefined;
+    if (!run || (run.status !== 'done' && run.status !== 'needs_review')) {
+      flash(c, { type: 'err', text: 'Bài chưa viết xong hoặc không tồn tại.' });
+      return c.redirect(`/sites/${site.id}`);
+    }
+    try {
+      if (!db.getToolRun(run.id)) db.addToolRun({ run_id: run.id, site_id: site.id, slug: `${ROUTES[site.brief.language].blog}/${run.slug}`, title: run.keyword, kind: run.options.kind });
+      const page = await tool.importRun(site, run);
+      db.addLog({ site_id: site.id, step: 'content_tool', level: 'info', message: `Nhập bài "${page.title}" từ Tool Viết Content #${run.id}` });
+      if (site.plan && site.site_path) db.scheduleRebuild(site.id, config.REBUILD_DEBOUNCE_SEC);
+      flash(c, { type: 'ok', text: `Đã nhập bài "${page.title}" vào /${page.slug}/${page.status === 'needs_review' ? ' (chờ duyệt vì kiểm tra tự động có lỗi)' : ', đang dựng lại'}.` });
+      return c.redirect(`/sites/${site.id}/pages/${page.id}`);
+    } catch (err) {
+      flash(c, { type: 'err', text: `Không nhập được: ${errorMessage(err)}` });
+      return c.redirect(`/sites/${site.id}`);
+    }
+  });
+
   /* ---------------- bài viết thủ công: tạo, soạn thảo, xóa, sửa SEO ---------------- */
   const readPostForm = (body: FormBody): ManualPostInput => ({
     title: str(body, 'title'),
@@ -762,6 +799,14 @@ export function createApp(deps: WebDeps): Hono {
   mountEditor(app, { db, config, siteOr404, render: render as never, enqueueRebuild: (siteId) => db.scheduleRebuild(siteId, config.REBUILD_DEBOUNCE_SEC) });
   mountDesign(app, { db, config, siteOr404, render: render as never, enqueueRebuild: (siteId) => db.scheduleRebuild(siteId, config.REBUILD_DEBOUNCE_SEC) });
   mountSecurity(app, { db, config, render: render as never, flash: flash as never });
+  // Tool Viết Content gộp trong bot: /content, /content/settings, /content/logs, /runs/*
+  if (services.contentTool) {
+    const toolApp = services.contentTool.mount((c, title, body, opts) => {
+      if (opts.flash) flash(c as Context, opts.flash as Flash);
+      return render(c as Context, title, 'content', body, { refresh: opts.refresh, pollUrl: opts.pollUrl, pollKey: opts.pollKey });
+    });
+    app.route('/', toolApp);
+  }
 
   /* ---------------- xem bản dựng cục bộ ---------------- */
   app.get('/sites/:id/preview/*', (c) => {
