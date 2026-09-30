@@ -595,7 +595,35 @@ export interface AiDetectReport {
 export interface AiReview {
   pass: boolean;
   summary: string;
-  issues: { severity: IssueSeverity; where: string; problem: string; fix: string }[];
+  issues: {
+    severity: IssueSeverity;
+    where: string;
+    problem: string;
+    fix: string;
+    /** Câu trích nguyên văn trong bài làm bằng chứng; mã kiểm lại, không tìm thấy thì bỏ lỗi */
+    quote?: string;
+    /** Lỗi bắt buộc đã xuất hiện ở hai vòng liên tiếp (hoặc vòng đầu) nên mới chặn */
+    confirmed?: boolean;
+  }[];
+}
+
+/** Một phần bài cần sửa riêng trong vòng sửa có mục tiêu. */
+export interface PatchTarget {
+  /** title, metaDescription, h1, excerpt, intro, nextSteps, sections.N, faq.N */
+  where: string;
+  /** Heading của mục hoặc câu hỏi của FAQ */
+  heading?: string;
+  current: string;
+  feedback: string[];
+  /** Cho phép đổi heading (khi chính heading bị báo lỗi) */
+  allowHeading: boolean;
+}
+
+/** Bản sửa model trả về cho một phần. */
+export interface ArticlePatch {
+  where: string;
+  heading?: string;
+  text: string;
 }
 
 export interface CheckRound {

@@ -1361,7 +1361,8 @@ function ChecksTab(p: RunDetailProps) {
                   <p class="small">{r.review.summary}</p>
                   {r.review.issues.map((i) => (
                     <div class="issue">
-                      <Badge status={i.severity} label={i.severity === 'major' ? 'Bắt buộc' : 'Nên'} /> <span class="pill">{i.where}</span> {i.problem} <span class="muted">→ {i.fix}</span>
+                      <Badge status={i.severity === 'major' && i.confirmed === false ? 'minor' : i.severity} label={i.severity === 'major' ? (i.confirmed === false ? 'Mới, chờ xác nhận' : 'Bắt buộc') : 'Nên'} /> <span class="pill">{i.where}</span> {i.problem} <span class="muted">→ {i.fix}</span>
+                      {i.quote ? <div class="small muted" style="margin-top:2px">Câu trích: “{i.quote}”</div> : null}
                     </div>
                   ))}
                 </>

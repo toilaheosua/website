@@ -1,5 +1,5 @@
 import type { AiDetector, ContentLlm, FetchedPage, LlmRunContext, MapsProvider, PageFetcher, PlaceClassification, PlaceForClassify, PlaceForRole, RawPlace, SearchProvider, SourceForLlm } from './types.js';
-import type { AiDetectReport, AiReview, Article, Outline, PlaceReview, PlaceReviewSummary, PlaceRole, ResearchNotes, SerpData, UsageTotals } from '../core/types.js';
+import type { AiDetectReport, AiReview, Article, ArticlePatch, Outline, PatchTarget, PlaceReview, PlaceReviewSummary, PlaceRole, ResearchNotes, SerpData, UsageTotals } from '../core/types.js';
 import { emptyUsage } from '../core/types.js';
 import { normText, nowIso, sha256, slugify, sleep, wordCount } from '../core/util.js';
 import { resolveContentStyle } from '../generator/content-styles.js';
@@ -361,10 +361,19 @@ export class MockLlm implements ContentLlm {
     };
   }
 
-  async reviewArticle(): Promise<AiReview> {
+  async patchArticle(input: LlmRunContext & { notes: ResearchNotes; outline: Outline; article: Article; targets: PatchTarget[]; round: number }): Promise<ArticlePatch[]> {
+    await sleep(MOCK_DELAY * 2);
+    this.bump('mock-writer', 6000, 2000);
+    const strip = (t: string) => t.replace(/\s*MOCK_AI_HIGH[^.]*\./g, '');
+    return input.targets.map((t) => ({ where: t.where, heading: '', text: strip(t.current) }));
+  }
+
+  async reviewArticle(input: LlmRunContext & { article: Article }): Promise<AiReview> {
     await sleep(MOCK_DELAY);
     this.bump('mock-writer', 9000, 500);
-    return { pass: true, summary: 'Bài mô phỏng đạt yêu cầu.', issues: [{ severity: 'minor', where: 'sections.1', problem: 'Có thể thêm chi tiết giác quan.', fix: 'Thêm một câu mô tả mùi.' }] };
+    // Lỗi có trích dẫn bịa để thử bộ kiểm chứng: phải bị bỏ, không chặn bài
+    const fake = { severity: 'major' as const, where: 'sections.0', problem: 'Dữ kiện không có trong ghi chú.', fix: 'Bỏ câu này.', quote: 'Câu này không hề có trong bài mô phỏng nào cả.' };
+    return { pass: true, summary: 'Bài mô phỏng đạt yêu cầu.', issues: [{ severity: 'minor', where: 'sections.1', problem: 'Có thể thêm chi tiết giác quan.', fix: 'Thêm một câu mô tả mùi.', quote: '' }, ...(input.article.sections.length ? [fake] : [])] };
   }
 
   async translateKeyword(keyword: string): Promise<string> {

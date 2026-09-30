@@ -1,4 +1,4 @@
-import type { Article, GeneralSettings, Outline, ResearchNotes, RunOptions, SerpData } from '../core/types.js';
+import type { Article, GeneralSettings, Outline, PatchTarget, ResearchNotes, RunOptions, SerpData } from '../core/types.js';
 import type { PlaceForRole, SourceForLlm } from '../services/types.js';
 import { contentStyleGuide, voiceGuide } from './content-styles.js';
 import { roundupTitle } from '../core/roundup.js';
@@ -80,7 +80,7 @@ export const BRAND_RULES = `KIỂU BÀI: GIỚI THIỆU THƯƠNG HIỆU, DOANH N
 - KHÔNG tự viết dòng địa chỉ, giờ, điện thoại, website, link Google Maps, dòng ảnh: tool chèn chính xác. Không câu than thiếu dữ liệu: không có thông tin phần nào thì viết ngắn phần đó hoặc bỏ.
 - Không dùng thuật ngữ thống kê. Không kể trải nghiệm cá nhân bịa; xưng "chúng tôi" thì chỉ nói điều có trong thông tin thương hiệu.`;
 
-export const REVIEWER_RULES = `Bạn là trưởng ban biên tập khó tính của một tạp chí tiếng Việt, rất nhạy với văn viết máy móc, sáo mòn, đều đều. Bạn duyệt bài trước khi đăng. Nhận xét thẳng, cụ thể, chỉ đúng vị trí và cách sửa. Trả về đúng cấu trúc JSON được yêu cầu.`;
+export const REVIEWER_RULES = `Bạn là biên tập viên kiểm chứng dữ kiện của một tạp chí tiếng Việt. Việc của bạn là đối chiếu từng dữ kiện trong bài với GHI CHÚ TƯ LIỆU và bố cục, không chấm phong cách. Mỗi lỗi phải chỉ đúng vị trí, trích nguyên văn câu lỗi và nói cách sửa. Không có lỗi thì nói không có; không bịa lỗi cho đủ. Trả về đúng cấu trúc JSON được yêu cầu.`;
 
 /* ------------------------------------------------------------------ */
 /*  Khối bối cảnh của một bài                                            */
@@ -357,23 +357,38 @@ export function fixPrompt(input: { article: Article; feedback: string[]; flagged
 
 export function reviewPrompt(input: { article: Article; options: RunOptions }): string {
   const lines: string[] = [];
-  lines.push('Duyệt bài dưới đây theo bảy tiêu chí, mỗi lỗi ghi rõ vị trí (intro, sections.2, faq.1, title...), vấn đề và cách sửa:');
-  lines.push('1. Dữ kiện ngoài GHI CHÚ TƯ LIỆU (số liệu, tên riêng, giá, năm, địa chỉ, trích dẫn không có trong ghi chú) → major.');
-  lines.push('2. Câu chữ có khả năng giống văn nguồn hoặc giống văn mẫu quen thuộc (định nghĩa sách giáo khoa, liệt kê theo trật tự quen) → major nếu cả đoạn, minor nếu một câu.');
-  lines.push('3. Văn máy móc, đều đều, vắng người viết: ba câu liên tiếp cùng nhịp, liên từ sáo mở đầu đoạn, câu tổng kết cuối mục, cụm bị cấm, ba tính từ liền, đoạn nào cũng cùng độ dài, mục không có chi tiết đời thường hay chính kiến của người viết → major nếu xuất hiện từ ba chỗ, minor nếu ít hơn.');
-  lines.push('4. Trả lời đúng ý định tìm kiếm của từ khóa và bao phủ đủ các mục trong bố cục; thiếu mục quan trọng → major.');
-  lines.push('5. Trùng ý giữa các mục, đoạn lấp chỗ không có thông tin → minor, nhiều hơn ba chỗ → major.');
-  lines.push('6. Đúng kiểu viết, ngôi kể và từ vựng vùng miền đã chọn, có chính kiến và giới hạn được thừa nhận → minor nếu thiếu.');
-  lines.push('7. Title, meta, từ khóa chính đúng yêu cầu SEO tự nhiên → minor.');
-  if (input.options.kind === 'brand') lines.push('8. Bài giới thiệu thương hiệu: lời khen không gắn chi tiết từ ghi chú, dữ kiện về thương hiệu không có trong ghi chú (năm, giải thưởng, giá, món), hoặc câu than thiếu dữ liệu → major.');
-  if (input.options.kind === 'roundup') lines.push('8. Bài tổng hợp quán: mục quán nào kể trải nghiệm cá nhân (đã ăn, đã ghé, chủ quán nói) mà ghi chú không có GHI CHÚ CỦA NGƯỜI ĐẶT BÀI cho quán đó → major; thiếu mục cho một quán trong danh sách, thiếu bảng so sánh, hoặc sao/số đánh giá/giá trong văn xuôi khác ghi chú → major.');
-  else if (input.options.comparison) lines.push('8. Chế độ so sánh 100%: mục H2 nào không đối chiếu từ hai đối tượng trở lên, không có bảng so sánh, hoặc văn xuôi chỉ lặp lại ô bảng → major.');
-  lines.push('CHỈ LIỆT KÊ LỖI MAJOR. Không đưa lỗi minor vào issues: góp ý phong cách, câu hơi sáo, mục hơi khô, FAQ có thể hay hơn đều bỏ qua; issues để mảng rỗng nếu bài không có lỗi major. Lỗi major là: dữ kiện sai hoặc ngoài ghi chú, câu chữ giống nguồn cả đoạn, thiếu mục quan trọng, sai ý định tìm kiếm, mâu thuẫn số liệu, kể trải nghiệm bịa (bài tổng hợp quán). pass = true khi issues rỗng. summary: hai đến ba câu nhận xét tổng thể.');
+  lines.push('Kiểm chứng bài dưới đây. Chỉ báo các lỗi KIỂM CHỨNG ĐƯỢC sau, mỗi lỗi ghi where (intro, sections.2, faq.1, title...), problem, fix và quote:');
+  lines.push('1. Dữ kiện không có trong GHI CHÚ TƯ LIỆU: số liệu, tên riêng, giá, năm, địa chỉ, giờ mở, trích dẫn, giải thưởng → major.');
+  lines.push('2. Số liệu trong văn xuôi khác ghi chú (sao, số lượt đánh giá, giá, giờ) → major.');
+  lines.push('3. Cả một đoạn giống văn nguồn hoặc văn mẫu quen thuộc (định nghĩa sách giáo khoa, liệt kê theo trật tự quen) → major.');
+  lines.push('4. Thiếu mục quan trọng của bố cục, hoặc bài trả lời sai ý định tìm kiếm của từ khóa → major; problem bắt đầu bằng chữ "Thiếu" hoặc "Sai ý định".');
+  if (input.options.kind === 'brand') lines.push('5. Bài giới thiệu thương hiệu: dữ kiện về thương hiệu không có trong ghi chú (năm, giải thưởng, giá, món) hoặc câu than thiếu dữ liệu → major.');
+  if (input.options.kind === 'roundup') lines.push('5. Bài tổng hợp quán: mục quán nào kể trải nghiệm cá nhân (đã ăn, đã ghé, chủ quán nói) mà ghi chú không có GHI CHÚ CỦA NGƯỜI ĐẶT BÀI cho quán đó → major; thiếu mục cho một quán trong danh sách hoặc thiếu bảng so sánh → major (problem bắt đầu bằng "Thiếu").');
+  else if (input.options.comparison) lines.push('5. Chế độ so sánh 100%: mục H2 nào không đối chiếu từ hai đối tượng trở lên hoặc không có bảng so sánh → major (problem bắt đầu bằng "Thiếu").');
+  lines.push('KHÔNG BÁO các điểm về phong cách: văn máy, đều đều, sáo, câu cụt, độ dài, nhịp câu, FAQ có thể hay hơn, mục hơi khô, title hay meta. Những điểm đó do công cụ khác kiểm; đưa vào issues sẽ bị bỏ.');
+  lines.push('QUOTE BẮT BUỘC: quote là một câu chép nguyên văn từ bài (không sửa chữ, không rút gọn, không dịch), câu chứa dữ kiện sai hoặc câu kể trải nghiệm bịa. Lỗi không có quote đúng nguyên văn sẽ bị mã loại bỏ. Chỉ lỗi loại "Thiếu" hoặc "Sai ý định" được để quote rỗng.');
+  lines.push('Chỉ liệt kê lỗi major; issues để mảng rỗng nếu không có. pass = true khi issues rỗng. summary: hai đến ba câu nói bài dựa đúng ghi chú tới đâu.');
   lines.push('', `Ngôi kể yêu cầu: ${input.options.voice}; từ vựng: ${input.options.dialect}.`);
-  lines.push('', 'BÀI CẦN DUYỆT (JSON):', JSON.stringify(input.article, null, 1));
+  lines.push('', 'BÀI CẦN KIỂM CHỨNG (JSON):', JSON.stringify(input.article, null, 1));
   return lines.join('\n');
 }
 
+/** Vòng sửa có mục tiêu: chỉ các phần bị lỗi, phần còn lại giữ nguyên bằng mã. */
+export function patchPrompt(input: { article: Article; targets: PatchTarget[]; round: number; options: RunOptions }): string {
+  const a = input.article;
+  const lines: string[] = [];
+  lines.push(`VÒNG SỬA ${input.round}, SỬA ĐÚNG CHỖ. Chỉ viết lại ${input.targets.length} phần liệt kê dưới đây theo lỗi đã nêu. Phần còn lại của bài được giữ nguyên bằng mã, bạn không cần và không được trả lại.`);
+  lines.push('', `Bài: title "${a.title}", H1 "${a.h1}", từ khóa "${a.targetKeyword}". Các mục của bài để giữ mạch: ${a.sections.map((s, i) => `sections.${i} "${s.heading}"`).join('; ')}.`);
+  lines.push('', 'NGUYÊN TẮC: giữ toàn bộ dữ kiện đúng, không thêm dữ kiện ngoài ghi chú; markdown đơn giản, tuyệt đối không thẻ HTML; giữ nguyên các dòng bắt đầu bằng "**Địa chỉ:**", "**Giờ mở cửa:**", "**Liên hệ:**", "**Đánh giá:**", dòng ảnh "![" và các bảng "|" (chỉ sửa chữ trong ô nếu được yêu cầu); không dùng cụm bị cấm, không liên từ sáo mở đầu đoạn; xen câu ngắn với câu dài; giữ ngôi kể và kiểu viết; tôn trọng số từ yêu cầu của từng phần; heading chỉ đổi khi lỗi nói về heading, còn lại để heading rỗng.');
+  if (input.options.kind === 'roundup') lines.push('Bài tổng hợp quán: không kể trải nghiệm cá nhân ở quán không có ghi chú của người đặt bài; không nói về việc thiếu dữ liệu.');
+  for (const t of input.targets) {
+    lines.push('', `=== ${t.where}${t.heading ? ` (heading: "${t.heading}")` : ''} ===`);
+    lines.push('LỖI CẦN SỬA:', ...t.feedback.map((f) => `- ${f}`));
+    lines.push(`VĂN BẢN HIỆN TẠI (${wordCount(t.current)} từ):`, t.current || '(trống)');
+  }
+  lines.push('', `TRẢ VỀ JSON: {"patches":[{"where":"...","heading":"","text":"..."}]} với đúng ${input.targets.length} phần tử, where chép đúng như trên; text là toàn văn phần đó sau khi sửa (với faq.N là câu trả lời, với title/metaDescription/h1/excerpt là một dòng).`);
+  return lines.join('\n');
+}
 export function classifyPlacesPrompt(input: { dish: string; area: string; places: { index: number; name: string; type: string; types: string[]; address: string; description: string }[] }): string {
   const lines: string[] = [];
   lines.push(`Món hoặc loại quán cần tìm: "${input.dish}". Khu vực: "${input.area}".`);

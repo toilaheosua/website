@@ -3,7 +3,8 @@ import path from 'node:path';
 import type { AppConfig } from '../config.js';
 import type { Db, Run, SourceRow } from '../db/index.js';
 import type { ContentLlm, Services, SourceForLlm } from '../services/types.js';
-import type { AiDetectReport, Article, CheckRound, GeneralSettings, ManualScore, Outline, PendingScore, ResearchNotes, SerpData, SerpResult } from '../core/types.js';
+import type { AiDetectReport, AiReview, Article, CheckRound, GeneralSettings, ManualScore, Outline, PendingScore, ResearchNotes, SerpData, SerpResult } from '../core/types.js';
+import { applyPatches, locateTargets, reviewIssueKey, verifyReviewIssues } from './patch.js';
 import { AppError, ConfigError, TransientError } from './errors.js';
 import { domainBlocked, domainOf, errorMessage, normText, nowIso, slugify, wordCount } from './util.js';
 import { ALWAYS_SKIP_DOMAINS } from '../services/fetcher.js';
@@ -452,6 +453,9 @@ async function stepVerify(ctx: StepContext): Promise<StepResult> {
   const blockers = (r: CheckRound) => r.quality.filter((i) => i.severity === 'major').length + (r.review?.issues.filter((i) => i.severity === 'major').length ?? 0) + (r.dup.pass ? 0 : 1) + (!r.ai.pass && !r.ai.skipped ? 1 : 0);
   // Bản ít lỗi nhất qua các vòng: vòng sửa có thể làm bài tệ hơn (model viết lại quá tay), khi đó giữ bản này
   let best: { article: Article; key: string; round: CheckRound } | null = null;
+  // Lỗi lớn AI duyệt của vòng trước: lỗi chỉ chặn khi lặp lại ở hai vòng liên tiếp (vòng đầu chặn ngay)
+  let prevReviewKeys: Set<string> | null = null;
+  let prevBlockers: number | null = null;
 
   while (true) {
     throwIfCancelled(ctx);
@@ -463,11 +467,24 @@ async function stepVerify(ctx: StepContext): Promise<StepResult> {
     const qualityPass = isPass(quality);
     const dup = pending ? pending.dup : checkDuplication(dedupParts(article), sources, { shingleSize: k, ratioMax: settings.dupRatioMax });
     if (!pending) dup.libraryMatches = checkLibraryDuplication(dedupParts(article), library, k);
-    // AI duyệt chỉ giữ lỗi bắt buộc: góp ý "nên" làm vòng sửa kéo dài mà không đổi kết quả đạt hay không
-    const rawReview = pending ? pending.review! : await ctx.llm.reviewArticle({ keyword: run.keyword, options, settings, notes, outline, article });
-    const review = { ...rawReview, issues: rawReview.issues.filter((i) => i.severity === 'major') };
-    const reviewMajor = review.issues;
-    const reviewPass = review.pass && reviewMajor.length === 0;
+    // AI duyệt: chỉ lỗi bắt buộc có trích dẫn kiểm chứng được; lỗi mới xuất hiện sau một vòng sửa phải lặp lại
+    // ở vòng kế mới chặn (bộ duyệt của model rẻ hay nhảy số, cùng bài mà 0 rồi 6 lỗi)
+    let review: AiReview;
+    let droppedReview = 0;
+    if (pending) review = pending.review!;
+    else {
+      const raw = await ctx.llm.reviewArticle({ keyword: run.keyword, options, settings, notes, outline, article });
+      const verified = verifyReviewIssues(raw, article);
+      droppedReview = verified.dropped;
+      const majors = verified.review.issues.filter((i) => i.severity === 'major');
+      const confirmedKeys = new Set(prevReviewKeys === null ? majors.map(reviewIssueKey) : majors.map(reviewIssueKey).filter((k) => prevReviewKeys!.has(k)));
+      review = { ...verified.review, issues: verified.review.issues.map((i) => ({ ...i, confirmed: i.severity === 'major' && confirmedKeys.has(reviewIssueKey(i)) })) };
+      review.pass = !review.issues.some((i) => i.confirmed);
+      prevReviewKeys = new Set(majors.map(reviewIssueKey));
+    }
+    const reviewMajor = review.issues.filter((i) => i.confirmed);
+    const reviewUnconfirmed = review.issues.filter((i) => i.severity === 'major' && !i.confirmed).length;
+    const reviewPass = reviewMajor.length === 0;
     const internalPass = qualityPass && dup.pass && reviewPass;
 
     let ai: AiDetectReport;
@@ -502,7 +519,7 @@ async function stepVerify(ctx: StepContext): Promise<StepResult> {
     const feedback = [
       ...issuesToFeedback(quality),
       ...dupToFeedback(dup, k),
-      ...review.issues.map((i) => `[${i.severity === 'major' ? 'BẮT BUỘC' : 'nên'}] ${i.where}: ${i.problem} → ${i.fix}`),
+      ...review.issues.map((i) => `[${i.confirmed ? 'BẮT BUỘC' : 'nên'}] ${i.where}: ${i.problem}${i.quote ? ` (câu: "${i.quote.slice(0, 120)}")` : ''} → ${i.fix}`),
     ];
     if (!ai.pass && !ai.skipped) {
       feedback.unshift(
@@ -519,19 +536,34 @@ async function stepVerify(ctx: StepContext): Promise<StepResult> {
     db.updateRun(run.id, { rounds: round });
     const aiText = ai.skipped ? (manual ? 'chưa chấm' : 'bỏ qua') : `${(ai.aiScore * 100).toFixed(1)}% ${ai.pass ? 'đạt' : 'chưa đạt'}`;
     ctx.log(
-      `Vòng ${round}: chất lượng ${qualityPass ? 'đạt' : `${quality.filter((i) => i.severity === 'major').length} lỗi bắt buộc`}; trùng nguồn ${(dup.ratio * 100).toFixed(1)}% (dài nhất ${dup.longestRun} từ) ${dup.pass ? 'đạt' : 'chưa đạt'}; AI ${aiText}; AI duyệt ${reviewPass ? 'đạt' : `${reviewMajor.length} lỗi lớn`}`,
+      `Vòng ${round}: chất lượng ${qualityPass ? 'đạt' : `${quality.filter((i) => i.severity === 'major').length} lỗi bắt buộc`}; trùng nguồn ${(dup.ratio * 100).toFixed(1)}% (dài nhất ${dup.longestRun} từ) ${dup.pass ? 'đạt' : 'chưa đạt'}; AI ${aiText}; AI duyệt ${reviewPass ? 'đạt' : `${reviewMajor.length} lỗi lớn`}${reviewUnconfirmed ? ` (+${reviewUnconfirmed} lỗi mới, chờ vòng sau xác nhận)` : ''}${droppedReview ? `, bỏ ${droppedReview} lỗi không trích được câu trong bài` : ''}`,
       pass ? 'info' : 'warn',
     );
     if (pass) break;
     // Hết lượt chấm tay mà nội bộ đã đạt: sửa thêm cũng không đo được, dừng để người dùng quyết định
     if (manual && ai.skipped && internalPass) break;
     if (round > settings.maxFixRounds) break;
-    const flagged = ai.blocks
-      .filter((b) => b.aiScore >= 0.5)
-      .sort((a, b) => b.aiScore - a.aiScore)
-      .slice(0, 25)
-      .map((b) => b.text);
-    article = finalizeArticle(ctx, await ctx.llm.fixArticle({ keyword: run.keyword, options, settings, notes, outline, article, feedback, flaggedTexts: flagged, round }));
+    // Vòng sửa không giảm được số lỗi chặn: sửa tiếp chỉ tốn thời gian và sinh lỗi mới, dừng để người dùng xem
+    if (prevBlockers !== null && blockers(lastRound) >= prevBlockers) {
+      ctx.log(`Vòng ${round} không giảm lỗi chặn (${blockers(lastRound)} so với ${prevBlockers} ở vòng trước): dừng sửa, giữ bản ít lỗi nhất để bạn xem lại.`, 'warn');
+      break;
+    }
+    prevBlockers = blockers(lastRound);
+    const located = locateTargets(article, { quality, dup, review, blocks: ai.blocks, minWords: limits.minWords, maxWords: limits.maxWords, shingleSize: k });
+    if (located.targets.length && !located.unlocated.length) {
+      // Sửa đúng chỗ: chỉ các phần bị lỗi đi qua model, phần còn lại giữ nguyên từng chữ
+      const patches = await ctx.llm.patchArticle({ keyword: run.keyword, options, settings, notes, outline, article, targets: located.targets, round });
+      article = finalizeArticle(ctx, applyPatches(article, patches, located.targets));
+      ctx.log(`Vòng ${round}: sửa đúng ${located.targets.length} chỗ (${located.targets.map((t) => t.where).join(', ')}), phần còn lại giữ nguyên.`);
+    } else {
+      if (located.unlocated.length) ctx.log(`Vòng ${round}: ${located.unlocated.length} lỗi không khoanh được vị trí (${located.unlocated.map((u) => u.slice(0, 80)).join(' | ')}), sửa cả bài.`, 'warn');
+      const flagged = ai.blocks
+        .filter((b) => b.aiScore >= 0.5)
+        .sort((a, b) => b.aiScore - a.aiScore)
+        .slice(0, 25)
+        .map((b) => b.text);
+      article = finalizeArticle(ctx, await ctx.llm.fixArticle({ keyword: run.keyword, options, settings, notes, outline, article, feedback, flaggedTexts: flagged, round }));
+    }
     const v = db.saveArtifact(run.id, 'fixed', article);
     articleKey = `fixed:${v}`;
     current = { article, kind: 'fixed', version: v, key: articleKey };

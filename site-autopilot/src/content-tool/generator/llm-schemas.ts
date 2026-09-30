@@ -108,10 +108,23 @@ export const LlmReviewSchema = z.object({
       where: z.string(),
       problem: z.string(),
       fix: z.string(),
+      quote: z.string().default(''),
     }),
   ),
 });
 export type LlmReview = z.infer<typeof LlmReviewSchema>;
+
+/** Vòng sửa có mục tiêu: chỉ các phần được yêu cầu */
+export const LlmPatchSchema = z.object({
+  patches: z.array(
+    z.object({
+      where: z.string(),
+      heading: z.string().default(''),
+      text: z.string(),
+    }),
+  ),
+});
+export type LlmPatch = z.infer<typeof LlmPatchSchema>;
 
 export const LlmTranslateSchema = z.object({
   english: z.string(),

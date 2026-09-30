@@ -1,9 +1,9 @@
 import type { z } from 'zod';
 import type { ContentLlm, LlmRunContext, PlaceClassification, PlaceForClassify, PlaceForRole, SourceForLlm } from './types.js';
-import type { AiReview, Article, LlmProvider, Outline, PlaceReview, PlaceReviewSummary, PlaceRole, ResearchNotes, SerpData, UsageTotals } from '../core/types.js';
+import type { AiReview, Article, ArticlePatch, LlmProvider, Outline, PatchTarget, PlaceReview, PlaceReviewSummary, PlaceRole, ResearchNotes, SerpData, UsageTotals } from '../core/types.js';
 import { emptyUsage } from '../core/types.js';
-import { LlmArticleSchema, LlmNotesSchema, LlmOutlineSchema, LlmPlaceClassifySchema, LlmPlaceRolesSchema, LlmReviewSchema, LlmReviewSummarySchema, LlmTranslateSchema, type LlmArticle, type LlmNotes, type LlmOutline } from '../generator/llm-schemas.js';
-import { MAPS_RULES, RESEARCH_RULES, REVIEWER_RULES, WRITER_RULES, assignRolesPrompt, classifyPlacesPrompt, editPrompt, extractNotesPrompt, fixPrompt, outlinePrompt, reviewPrompt, runContextBlock, summarizeReviewsPrompt, translatePrompt, writePrompt } from '../generator/prompts.js';
+import { LlmArticleSchema, LlmNotesSchema, LlmOutlineSchema, LlmPatchSchema, LlmPlaceClassifySchema, LlmPlaceRolesSchema, LlmReviewSchema, LlmReviewSummarySchema, LlmTranslateSchema, type LlmArticle, type LlmNotes, type LlmOutline } from '../generator/llm-schemas.js';
+import { MAPS_RULES, RESEARCH_RULES, REVIEWER_RULES, WRITER_RULES, assignRolesPrompt, classifyPlacesPrompt, editPrompt, extractNotesPrompt, fixPrompt, outlinePrompt, patchPrompt, reviewPrompt, runContextBlock, summarizeReviewsPrompt, translatePrompt, writePrompt } from '../generator/prompts.js';
 import { wordCount } from '../core/util.js';
 import { capFirst } from '../generator/quality.js';
 import { AppError } from '../core/errors.js';
@@ -208,6 +208,19 @@ export abstract class BaseContentLlm implements ContentLlm {
     return articleFromLlm(out, input.keyword, input.outline);
   }
 
+  async patchArticle(input: LlmRunContext & { notes: ResearchNotes; outline: Outline; article: Article; targets: PatchTarget[]; round: number }): Promise<ArticlePatch[]> {
+    const out = await this.structured(LlmPatchSchema, {
+      model: this.models.writerModel,
+      system: [WRITER_RULES, runContextBlock({ keyword: input.keyword, options: input.options, settings: input.settings, notes: input.notes, outline: input.outline })],
+      user: patchPrompt({ article: input.article, targets: input.targets, round: input.round, options: input.options }),
+      maxTokens: 24000,
+      label: `Sửa đúng chỗ vòng ${input.round}`,
+      temperature: this.models.temperature,
+    });
+    return out.patches.map((p) => ({ where: p.where.trim(), heading: p.heading, text: p.text }));
+  }
+
+  /** Nhiệt độ 0 để cùng một bài cho cùng một kết quả duyệt, không nhảy số giữa các vòng. */
   async reviewArticle(input: LlmRunContext & { notes: ResearchNotes; outline: Outline; article: Article }): Promise<AiReview> {
     return this.structured(LlmReviewSchema, {
       model: this.models.writerModel,
@@ -215,6 +228,7 @@ export abstract class BaseContentLlm implements ContentLlm {
       user: reviewPrompt({ article: articleToLlm(input.article) as unknown as Article, options: input.options }),
       maxTokens: 20000,
       label: 'AI duyệt bài',
+      temperature: 0,
     });
   }
 
