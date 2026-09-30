@@ -132,6 +132,36 @@ export function repairInlineTables(md: string): string {
   return ensureTableSeparators(out.join('\n'));
 }
 
+export function isTableRow(line: string): boolean {
+  return /^\s*\|.*\|\s*$/.test(line);
+}
+
+/**
+ * Gạch ngang dài trong văn xuôi thành dấu phẩy (văn tiếng Việt không dùng gạch ngang giữa câu), nhưng trong ô bảng
+ * "100–300 đ", "17:00–22:30" là khoảng số: thành "-" ; ô chỉ có một gạch nghĩa là không có dữ liệu: để trống.
+ */
+export function replaceDashes(md: string): string {
+  return md
+    .split('\n')
+    .map((l) => (isTableRow(l) ? l.replace(/\|\s*[—–-]\s*(?=\|)/g, '| ').replace(/\s*[—–]\s*/g, '-') : l.replace(/\s*[—–]\s*/g, ', ')))
+    .join('\n');
+}
+
+/**
+ * Bảng model hay viết hỏng theo nhiều kiểu: các hàng cách nhau bằng dòng trống (mỗi hàng thành một đoạn),
+ * thiếu dòng phân cách, cả bảng trên một dòng. Gom hàng lại, chèn phân cách; gọi sau mọi bước dọn khác.
+ */
+export function normalizeTables(md: string): string {
+  let out = md;
+  // Hàng bảng cách nhau bằng dòng trống: kéo sát lại (lặp tới khi không còn)
+  let prev = '';
+  while (prev !== out) {
+    prev = out;
+    out = out.replace(/(\|[^\n]*\|)[ \t]*\n(?:[ \t]*\n)+(?=[ \t]*\|)/g, '$1\n');
+  }
+  return ensureTableSeparators(out);
+}
+
 /** Khối bảng (các dòng liền nhau bắt đầu bằng "|") mà dòng hai không phải dòng phân cách thì chèn vào. */
 export function ensureTableSeparators(md: string): string {
   const lines = md.split('\n');

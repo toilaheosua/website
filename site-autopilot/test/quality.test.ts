@@ -73,7 +73,8 @@ describe('autoFixPage', () => {
     p.sections[0]!.body = '# Tiêu đề lạc\n\nĐoạn <b>đậm</b> có dấu — dài.';
     const out = autoFixPage(p);
     expect(out.h1).toBe('Chọn quán, đúng cách');
-    expect(out.sections[0]!.body).toBe('**Tiêu đề lạc**\n\nĐoạn đậm có dấu, dài.');
+    // Thẻ in đậm HTML thành **markdown** thay vì bị xóa
+    expect(out.sections[0]!.body).toBe('**Tiêu đề lạc**\n\nĐoạn **đậm** có dấu, dài.');
   });
 });
 

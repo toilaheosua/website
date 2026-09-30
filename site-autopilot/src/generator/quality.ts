@@ -1,3 +1,4 @@
+import { htmlToMarkdown, normalizeTables, repairInlineTables, replaceDashes, separateTables } from '../content-tool/generator/html-md.js';
 import type { PageContent } from '../core/types.js';
 
 /**
@@ -62,11 +63,15 @@ function norm(s: string): string {
 
 /** Sửa tự động các lỗi hình thức không cần AI: gạch ngang dài, thẻ HTML, heading # trong body. */
 export function autoFixPage(page: PageContent): PageContent {
+  // Bảng markdown: gạch ngang trong ô giữ là khoảng số, hàng cách dòng trống gom lại, thiếu dòng phân cách thì chèn
   const fixMd = (md: string) =>
-    md
-      .replace(/\s*[—–]\s*/g, ', ')
-      .replace(/<\/?[a-z][^>]*>/gi, '')
-      .replace(/^#{1,6}\s+(.+)$/gm, '**$1**');
+    separateTables(
+      normalizeTables(
+        replaceDashes(repairInlineTables(htmlToMarkdown(md)))
+          .replace(/<\/?[a-z][^>]*>/gi, '')
+          .replace(/^#{1,6}\s+(.+)$/gm, '**$1**'),
+      ),
+    );
   const fixText = (t: string) => t.replace(/\s*[—–]\s*/g, ', ').replace(/<\/?[a-z][^>]*>/gi, '').trim();
   return {
     ...page,

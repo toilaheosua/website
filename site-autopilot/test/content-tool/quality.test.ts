@@ -3,7 +3,7 @@ import type { Article } from '../../src/content-tool/core/types.js';
 import { articleWordCount, autoFixArticle, capFirst, checkQuality, isPass, sentencesOf } from '../../src/content-tool/generator/quality.js';
 import { ROUNDUP_BANNED } from '../../src/content-tool/core/pipeline.js';
 import { wordCount } from '../../src/content-tool/core/util.js';
-import { ensureTableSeparators, htmlToMarkdown, repairInlineTables, separateTables } from '../../src/content-tool/generator/html-md.js';
+import { ensureTableSeparators, htmlToMarkdown, normalizeTables, repairInlineTables, replaceDashes, separateTables } from '../../src/content-tool/generator/html-md.js';
 import { markdownToHtml } from '../../src/content-tool/generator/markdown.js';
 import { roundupWordLimits } from '../../src/content-tool/core/pipeline.js';
 
@@ -130,6 +130,18 @@ describe('cổng chất lượng', () => {
     // Qua autoFix: mục có bảng một dòng dựng ra bảng thật
     const fixed = autoFixArticle(sample({ sections: [{ heading: 'So sánh', level: 2, body: inline }] }));
     expect(markdownToHtml(fixed.sections[0]!.body)).toContain('<th>Quán</th>');
+  });
+
+  it('bảng có hàng cách dòng trống và gạch ngang trong ô: gom hàng, giữ khoảng số, ô chỉ có gạch thì trống', () => {
+    const broken = ['Bảng dưới đây so sánh.', '', '| Quán | Sao | Giá | Giờ mở |', '', '|---|---|---|---|', '', '| Ốc Cô Ba | 4.7 | 100–300 đ | 17:00–22:30 |', '', '| Quán Ốc Thảo | 4.1 | – | Cả ngày |', '', 'Ghi chú sau bảng – có gạch.'].join('\n');
+    const fixed = autoFixArticle(sample({ sections: [{ heading: 'So sánh', level: 2, body: broken }] }));
+    expect(fixed.sections[0]!.body).toBe(['Bảng dưới đây so sánh.', '', '| Quán | Sao | Giá | Giờ mở |', '|---|---|---|---|', '| Ốc Cô Ba | 4.7 | 100-300 đ | 17:00-22:30 |', '| Quán Ốc Thảo | 4.1 | | Cả ngày |', '', 'Ghi chú sau bảng, có gạch.'].join('\n'));
+    const html = markdownToHtml(fixed.sections[0]!.body);
+    expect(html).toContain('<table>');
+    expect(html).toContain('<td>100-300 đ</td>');
+    expect((html.match(/<p>/g) ?? []).length).toBe(2);
+    expect(replaceDashes('a – b')).toBe('a, b');
+    expect(normalizeTables('| A |\n\n\n| B |')).toBe('| A |\n| --- |\n| B |');
   });
 
   it('bài tổng hợp quán: trần số từ nới theo số quán, ít quán thì giữ cài đặt', () => {
