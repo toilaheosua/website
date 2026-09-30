@@ -24,8 +24,8 @@ import { SecretStore as ToolSecretStore, loadMasterKey as loadToolMasterKey } fr
 import { Worker as ToolWorker } from '../content-tool/core/worker.js';
 import { createApp as createToolApp } from '../content-tool/web/server.js';
 import { GeneralSettingsSchema as ToolSettingsSchema, RunOptionsSchema, type PlacesData, type RunOptions } from '../content-tool/core/types.js';
-import { latestArticle } from '../content-tool/core/pipeline.js';
-import { buildExportBundle } from '../content-tool/generator/photos.js';
+import { buildRunBundle, latestArticle } from '../content-tool/core/pipeline.js';
+import type { ManualPostInput } from '../core/manual-post.js';
 import type { Flash } from '../web/layout.js';
 
 const log = createLogger('content-tool');
@@ -115,7 +115,9 @@ export class ContentToolBridge {
           const row = this.bot.db.getToolRun(runId);
           const site = row ? this.bot.db.getSite(row.site_id) : undefined;
           if (!row || !site) return null;
-          return { siteId: site.id, domain: site.domain, pageId: row.status === 'imported' && row.imported_page_id ? row.imported_page_id : null };
+          // Bài đã bị xóa trên site thì coi như chưa đăng để cho đăng lại
+          const pageId = row.status === 'imported' && row.imported_page_id && this.bot.db.getPage(row.imported_page_id) ? row.imported_page_id : null;
+          return { siteId: site.id, domain: site.domain, pageId };
         },
       },
     });
@@ -221,26 +223,7 @@ export class ContentToolBridge {
    * draft: lưu làm bài nháp (chưa công khai) để người dùng sửa tiêu đề, đường dẫn rồi tự duyệt.
    */
   async importRun(site: Site, run: Run, slug?: string, opts: { draft?: boolean } = {}): Promise<{ id: number; title: string; slug: string; status: string }> {
-    const cur = latestArticle(this.db, run.id);
-    if (!cur) throw new Error('Bài chưa có nội dung');
-    const dir = path.join(this.config.exportsDir, String(run.id));
-    const places = run.options.kind !== 'web' ? this.db.getArtifact<PlacesData>(run.id, 'places')?.content ?? null : null;
-    const bundle = await buildExportBundle(cur.article, { keyword: run.keyword, dir, baseUrl: '', places, sourceUrls: this.db.okSources(run.id).map((s) => s.url), brand: run.options.kind === 'brand' ? run.options : null });
-    const entries = [{ name: 'bai.json', data: Buffer.from(JSON.stringify(bundle.json), 'utf8') }, ...bundle.photos.map((p) => ({ name: p.rel, data: p.data }))];
-    const parsed = parseImportedPost(entries);
-    const dirs = siteDirs(this.bot.config.sitesDir, site.domain);
-    const mapping = new Map<string, string>();
-    let heroLibraryId: number | undefined;
-    for (const img of parsed.images) {
-      try {
-        const lib = await saveLibraryImage({ db: this.bot.db, siteId: site.id, cacheDir: dirs.images, buffer: img.data, alt: img.alt, tags: ['viet-content', run.options.kind === 'web' ? 'bai-viet' : 'google-maps'], source: 'upload', nameHint: path.parse(img.fileName).name });
-        mapping.set(img.ref, `/assets/img/${path.basename(lib.file)}`);
-        heroLibraryId ??= lib.id;
-      } catch (err) {
-        log.warn(`Ảnh ${img.fileName} lỗi: ${errorMessage(err)}`);
-      }
-    }
-    const values = { ...parsed.values, body: rewriteImageRefs(parsed.values.body, mapping, parsed.missingImages) };
+    const { values, heroLibraryId } = await this.prepareImport(site, run);
     const blog = ROUTES[site.brief.language].blog;
     const finalSlug = slug ?? `${blog}/${slugify(values.slug || values.title)}`;
     const existing = this.bot.db.getPageBySlug(site.id, finalSlug);
@@ -273,17 +256,60 @@ export class ContentToolBridge {
     return { id, title: content.title, slug: finalSlug, status };
   }
 
+  /**
+   * Bài của tool → dữ liệu cho form Viết bài thủ công của bot: gói bài + ảnh → nhận diện như "Nhập bài từ file",
+   * ảnh vào Kho ảnh, đường dẫn ảnh đổi sang /assets/img/. brandInBody: thêm đoạn nhắc thương hiệu vào cuối thân
+   * bài để người dùng thấy và sửa được ngay trong form (luồng nhập tự động thêm đoạn này bằng brandTouch).
+   */
+  async prepareImport(site: Site, run: Run, opts: { brandInBody?: boolean } = {}): Promise<{ values: ManualPostInput; heroLibraryId?: number; saved: number; notes: string[] }> {
+    const bundle = await buildRunBundle(this.db, run, { exportsDir: this.config.exportsDir });
+    const entries = [{ name: 'bai.json', data: Buffer.from(JSON.stringify(bundle.json), 'utf8') }, ...bundle.photos.map((p) => ({ name: p.rel, data: p.data }))];
+    const parsed = parseImportedPost(entries);
+    const dirs = siteDirs(this.bot.config.sitesDir, site.domain);
+    const mapping = new Map<string, string>();
+    let heroLibraryId: number | undefined;
+    let saved = 0;
+    for (const img of parsed.images) {
+      try {
+        const lib = await saveLibraryImage({ db: this.bot.db, siteId: site.id, cacheDir: dirs.images, buffer: img.data, alt: img.alt, tags: ['viet-content', run.options.kind === 'web' ? 'bai-viet' : 'google-maps'], source: 'upload', nameHint: path.parse(img.fileName).name });
+        mapping.set(img.ref, `/assets/img/${path.basename(lib.file)}`);
+        heroLibraryId ??= lib.id;
+        saved++;
+      } catch (err) {
+        log.warn(`Ảnh ${img.fileName} lỗi: ${errorMessage(err)}`);
+      }
+    }
+    let body = rewriteImageRefs(parsed.values.body, mapping, parsed.missingImages);
+    const notes = [...parsed.notes, `Đã đưa ${saved} ảnh vào Kho ảnh thật (tag viet-content)${parsed.missingImages.length ? `; bỏ ${parsed.missingImages.length} ảnh không có trong gói` : ''}`];
+    if (opts.brandInBody) {
+      const para = this.brandParagraph(site);
+      if (para) {
+        const headings = [...body.matchAll(/^#{2,3}\s+(.+)$/gm)].map((m) => m[1] ?? '');
+        const last = headings[headings.length - 1] ?? '';
+        body = /bước tiếp theo|trước khi|kết|lời cuối/i.test(last) ? `${body.trim()}\n\n${para}` : `${body.trim()}\n\n## Bước tiếp theo\n\n${para}`;
+        notes.push('Đã thêm đoạn nhắc thương hiệu kèm liên kết nội bộ ở cuối bài; sửa hoặc xóa tùy ý');
+      }
+    }
+    return { values: { ...parsed.values, body }, heroLibraryId, saved, notes };
+  }
+
+  /** Đoạn nhắc thương hiệu kèm liên kết nội bộ cho site doanh nghiệp; site vệ tinh hoặc tắt "Nhắc thương hiệu" thì không có. */
+  brandParagraph(site: Site): string | null {
+    if (site.brief.siteType !== 'business' || !site.brief.brandMention) return null;
+    const r = ROUTES[site.brief.language];
+    const e = site.entity;
+    const address = [e.address.streetAddress, e.address.addressLocality].filter(Boolean).join(', ');
+    return `Nếu bạn ở ${site.brief.location || 'gần đây'} và muốn thử tận nơi, ghé **[${site.brief.brandName}](/)**${address ? ` tại ${address}` : ''}${e.telephone ? `, gọi ${e.telephone}` : ''} hoặc xem [cách liên hệ](/${r.contact}/) và các [bài viết khác](/${r.blog}/) trên trang này.`;
+  }
+
   /** Site doanh nghiệp: thêm đoạn nhắc thương hiệu kèm liên kết nội bộ hợp lệ; site vệ tinh: chỉ lọc liên kết. */
   private brandTouch(site: Site, content: ReturnType<typeof buildManualPost>, slug: string) {
     const ctx = makeStepContext(this.bot.db, this.bot.config, this.bot.services, site, 'content_tool');
     const links = site.plan ? internalLinksFor(ctx, site.plan, slug) : [];
     const validPaths = links.map((l) => l.path.split('#')[0] as string);
-    const r = ROUTES[site.brief.language];
     let sections = content.sections;
-    if (site.brief.siteType === 'business' && site.brief.brandMention) {
-      const e = site.entity;
-      const address = [e.address.streetAddress, e.address.addressLocality].filter(Boolean).join(', ');
-      const para = `Nếu bạn ở ${site.brief.location || 'gần đây'} và muốn thử tận nơi, ghé **[${site.brief.brandName}](/)**${address ? ` tại ${address}` : ''}${e.telephone ? `, gọi ${e.telephone}` : ''} hoặc xem [cách liên hệ](/${r.contact}/) và các [bài viết khác](/${r.blog}/) trên trang này.`;
+    const para = this.brandParagraph(site);
+    if (para) {
       const last = sections[sections.length - 1];
       if (last && /bước tiếp theo|trước khi|kết|lời cuối/i.test(last.heading)) sections = [...sections.slice(0, -1), { ...last, body: `${last.body.trim()}\n\n${para}` }];
       else sections = [...sections, { heading: 'Bước tiếp theo', body: para }];

@@ -508,14 +508,19 @@ export function createApp(deps: WebDeps): Hono {
       flash(c, { type: 'warn', text: 'Bài chưa viết xong, chờ tool hoàn tất rồi đăng.' });
       return c.redirect(back);
     }
+    if (!site.plan) {
+      flash(c, { type: 'err', text: 'Site chưa có kế hoạch nội dung, chờ bước Lập kế hoạch xong rồi đăng bài.' });
+      return c.redirect(back);
+    }
     try {
-      if (!existing) db.addToolRun({ run_id: run.id, site_id: site.id, slug: `${ROUTES[site.brief.language].blog}/${run.slug}`, title: run.keyword, kind: run.options.kind });
-      const page = await tool.importRun(site, run, existing?.slug, { draft: true });
-      db.addLog({ site_id: site.id, step: 'content_tool', level: 'info', message: `Tạo bài nháp "${page.title}" từ Tool Viết Content #${run.id} (/${page.slug}/), chờ người dùng duyệt` });
-      flash(c, { type: 'ok', text: `Đã tạo bài nháp "${page.title}" trên ${site.domain}, chưa công khai. Sửa tiêu đề, đường dẫn, meta ở đây rồi bấm "Duyệt và đăng".` });
-      return c.redirect(`/sites/${site.id}/pages/${page.id}`);
+      // Mở form Viết bài thủ công điền sẵn từ gói bài + ảnh (như "Nhập bài từ file"); người dùng sửa rồi bấm Đăng
+      const blog = ROUTES[site.brief.language].blog;
+      const prep = await tool.prepareImport(site, run, { brandInBody: true });
+      const values = { ...prep.values, slug: existing ? existing.slug.slice(blog.length + 1) : prep.values.slug };
+      db.addLog({ site_id: site.id, step: 'content_tool', level: 'info', message: `Mở form đăng bài từ Tool Viết Content #${run.id}: "${values.title}", ${prep.saved} ảnh` });
+      return render(c, `Viết bài ${site.domain}`, 'sites', PostForm({ site, values, library: db.listLibrary(site.id), notice: [...prep.notes, 'Sửa tiêu đề, đường dẫn, meta hay nội dung tùy ý rồi bấm Đăng ở cuối trang: bài lên website ngay.'], noticeTitle: `Bài từ Tool Viết Content #${run.id} đã sẵn sàng.`, heroLibraryId: prep.heroLibraryId, toolRunId: run.id }));
     } catch (err) {
-      flash(c, { type: 'err', text: `Không tạo được bài: ${errorMessage(err)}` });
+      flash(c, { type: 'err', text: `Không mở được bài: ${errorMessage(err)}` });
       return c.redirect(back);
     }
   });
@@ -594,8 +599,10 @@ export function createApp(deps: WebDeps): Hono {
     const errors = validatePost(site.id, v);
     const blog = ROUTES[site.brief.language].blog;
     const slug = postSlug(blog, v.slug, v.title);
+    const toolRunIdRaw = Number.parseInt(str(body, 'toolRunId'), 10);
+    const toolRunId = Number.isFinite(toolRunIdRaw) ? toolRunIdRaw : undefined;
     if (db.getPageBySlug(site.id, slug)) errors.push(`Đường dẫn /${slug}/ đã có bài khác`);
-    if (errors.length) return render(c, `Viết bài ${site.domain}`, 'sites', PostForm({ site, values: v, errors, library: db.listLibrary(site.id) }));
+    if (errors.length) return render(c, `Viết bài ${site.domain}`, 'sites', PostForm({ site, values: v, errors, library: db.listLibrary(site.id), toolRunId }));
     const content = autoFixPage(buildManualPost(v));
     const posts = db.listPages(site.id).filter((p) => p.kind === 'post').length;
     const id = db.upsertPage({ site_id: site.id, kind: 'post', slug, title: content.title, content, sort_order: 10 + posts, status: 'published', review: manualReview(content) });
@@ -604,7 +611,13 @@ export function createApp(deps: WebDeps): Hono {
     const heroId = Number.parseInt(str(body, 'heroLibraryId'), 10);
     const heroLib = Number.isFinite(heroId) ? db.getLibraryImage(heroId) : undefined;
     if (heroLib && heroLib.site_id === site.id) db.upsertImage({ site_id: site.id, key: `post.${short}.hero`, provider: 'manual', provider_id: String(heroLib.id), query: null, file: heroLib.file, width: heroLib.width, height: heroLib.height, alt: content.heroImageAlt || heroLib.alt, credit: heroLib.credit, credit_url: '' });
-    db.addLog({ site_id: site.id, step: 'manual_post', level: 'info', message: `Viết bài thủ công "${content.title}" (/${slug}/)` });
+    // Bài từ Tool Viết Content: gắn lần chạy với bài vừa đăng để tab Bài viết của tool dẫn tới bài
+    if (toolRunId !== undefined && services.contentTool) {
+      const trun = services.contentTool.db.getRun(toolRunId);
+      if (!db.getToolRun(toolRunId) && trun) db.addToolRun({ run_id: toolRunId, site_id: site.id, slug, title: content.title, kind: trun.options.kind });
+      if (db.getToolRun(toolRunId)) db.updateToolRun(toolRunId, { status: 'imported', imported_page_id: id, error: null });
+    }
+    db.addLog({ site_id: site.id, step: 'manual_post', level: 'info', message: `${toolRunId !== undefined ? `Đăng bài từ Tool Viết Content #${toolRunId}` : 'Viết bài thủ công'} "${content.title}" (/${slug}/)` });
     if (site.site_path) db.scheduleRebuild(site.id, config.REBUILD_DEBOUNCE_SEC);
     flash(c, { type: 'ok', text: `Đã đăng bài "${content.title}", đang dựng lại và đưa lên host. Vào Chỉnh sửa trực quan để chọn ảnh đầu bài.` });
     return c.redirect(`/sites/${site.id}/pages/${id}`);

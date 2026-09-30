@@ -144,33 +144,38 @@ describe('Tool Viết Content gộp trong bot', () => {
     expect(articleTab).toContain(`name="siteId" value="${id}"`); // một site duy nhất: chọn sẵn
     expect(articleTab).toContain('Đăng bài');
 
-    // Đăng bài → bài nháp (chưa công khai) trên site, chuyển tới trang bài để sửa tiêu đề, URL
+    // Đăng bài → mở form Viết bài thủ công điền sẵn (ảnh đã vào Kho ảnh, có đoạn nhắc thương hiệu), người dùng sửa rồi bấm Đăng
     const pub = await app.request(`/content/runs/${loose.id}/publish`, { method: 'POST', body: new URLSearchParams({ siteId: String(id) }), headers: { cookie, 'Content-Type': 'application/x-www-form-urlencoded' } });
-    expect(pub.status).toBe(302);
-    const draftRow = db.getToolRun(loose.id)!;
-    expect(draftRow.status).toBe('imported');
-    expect(pub.headers.get('location')).toBe(`/sites/${id}/pages/${draftRow.imported_page_id}`);
-    const draft = db.getPage(draftRow.imported_page_id!)!;
-    expect(draft.status).toBe('needs_review');
-    expect(draft.review?.summary).toMatch(/Bài nháp từ Tool Viết Content/);
-    expect(draft.review?.approvedBy).toBeUndefined();
-    const pageHtml = await (await app.request(`/sites/${id}/pages/${draft.id}`, { headers: { cookie } })).text();
-    expect(pageHtml).toContain('Bài nháp, chưa công khai');
-    expect(pageHtml).toContain('Duyệt và đăng');
-    expect(pageHtml).toContain(`name="slug" value="${draft.slug}"`);
+    expect(pub.status).toBe(200);
+    const formHtml = await pub.text();
+    expect(formHtml).toContain('Viết bài thủ công');
+    expect(formHtml).toContain(`name="toolRunId" value="${loose.id}"`);
+    expect(formHtml).toContain('đã sẵn sàng');
+    expect(db.getToolRun(loose.id)?.status).not.toBe('imported');
+    const prep = await bridge.prepareImport(db.getSite(id)!, bridge.db.getRun(loose.id)!, { brandInBody: true });
+    expect(prep.values.body).toContain('[Hủ Tiếu Ông Giáo](/)');
+    expect(formHtml).toContain('[Hủ Tiếu Ông Giáo](/)');
+    const postForm = new URLSearchParams({ ...prep.values, title: 'Hủ tiếu gõ Phan Rang: chọn quán thế nào cho đúng', slug: 'hu-tieu-go-phan-rang', toolRunId: String(loose.id) });
+    const posted = await app.request(`/sites/${id}/posts/new`, { method: 'POST', body: postForm, headers: { cookie, 'Content-Type': 'application/x-www-form-urlencoded' } });
+    expect(posted.status).toBe(302);
+    const row = db.getToolRun(loose.id)!;
+    expect(row.status).toBe('imported');
+    const page = db.getPage(row.imported_page_id!)!;
+    expect(page.slug).toBe('blog/hu-tieu-go-phan-rang');
+    expect(page.status).toBe('published');
+    expect(posted.headers.get('location')).toBe(`/sites/${id}/pages/${page.id}`);
     // Tab Bài viết giờ dẫn tới bài trên site thay cho nút Đăng bài
     const articleTab2 = await (await app.request(`/runs/${loose.id}?tab=article`, { headers: { cookie } })).text();
     expect(articleTab2).toContain('Đã đăng vào bridge.test');
-    expect(articleTab2).toContain(`href="/sites/${id}/pages/${draft.id}"`);
+    expect(articleTab2).toContain(`href="/sites/${id}/pages/${page.id}"`);
     expect(articleTab2).not.toContain(`action="/content/runs/${loose.id}/publish"`);
-    // Đăng lần nữa chỉ chuyển tới bài đã có
-    const again = await app.request(`/content/runs/${loose.id}/publish`, { method: 'POST', body: new URLSearchParams({ siteId: String(id) }), headers: { cookie, 'Content-Type': 'application/x-www-form-urlencoded' } });
-    expect(again.headers.get('location')).toBe(`/sites/${id}/pages/${draft.id}`);
-    // Người dùng duyệt → bài công khai, xếp dựng lại
-    const ok = await app.request(`/sites/${id}/pages/${draft.id}/approve`, { method: 'POST', headers: { cookie } });
-    expect(ok.status).toBe(302);
-    expect(db.getPage(draft.id)?.status).toBe('published');
-    expect(db.getPage(draft.id)?.review?.approvedBy).toBe('user');
+    // Xóa bài trên site → tool cho đăng lại (không còn báo đã đăng)
+    const del = await app.request(`/sites/${id}/pages/${page.id}/delete`, { method: 'POST', headers: { cookie } });
+    expect(del.status).toBe(302);
+    const articleTab3 = await (await app.request(`/runs/${loose.id}?tab=article`, { headers: { cookie } })).text();
+    expect(articleTab3).not.toContain('Đã đăng vào');
+    expect(articleTab3).toContain(`action="/content/runs/${loose.id}/publish"`);
+    expect(articleTab3).toContain(`name="siteId" value="${id}"`);
 
     // Bài tổng hợp quán dừng chờ duyệt: nút Duyệt gửi đúng các ô đang tích, không cần bấm Lưu trước
     const roundupRes = await app.request('/runs', { method: 'POST', body: new URLSearchParams({ kind: 'roundup', dish: 'bánh canh', area: 'Phan Rang', placesCount: '6', reviewPlaces: 'on' }), headers: { cookie, 'Content-Type': 'application/x-www-form-urlencoded' } });

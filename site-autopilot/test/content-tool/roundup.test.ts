@@ -315,10 +315,11 @@ describe('bảng dựng bằng mã từ dữ liệu Maps', () => {
     const data = mkData();
     const md = buildComparisonTable(data);
     const lines = md.split('\n');
-    expect(lines[0]).toBe('| Quán | Sao | Lượt đánh giá | Giá | Giờ mở |');
-    expect(lines[1]).toBe('| --- | --- | --- | --- | --- |');
+    expect(lines[0]).toBe('| Quán | Sao | Lượt đánh giá | Giờ mở |');
+    expect(lines[1]).toBe('| --- | --- | --- | --- |');
     expect(lines.length).toBe(5);
-    expect(md).toContain('| **1. Hủ tiếu Ông Giáo** | 4.7 | 2.208 | 20.000 đến 50.000 đ | 05:00-12:00 |');
+    expect(md).toContain('| **1. Hủ tiếu Ông Giáo** | 4.7 | 2.208 | 05:00-12:00 |');
+    expect(lines[0]).not.toContain('| Giá |');
     expect(shortHours('Thứ hai đến Thứ năm 15:00 đến 22:30; Thứ sáu 15:00 đến 00:30')).toBe('15:00-22:30 (tùy ngày)');
     expect(shortHours('Hằng ngày 17:00 đến 01:00')).toBe('17:00-01:00');
     expect(shortHours('')).toBe('');
@@ -330,6 +331,8 @@ describe('bảng dựng bằng mã từ dữ liệu Maps', () => {
     const fit = buildFitTable(data);
     expect(fit.split('\n')[0]).toBe('| Bạn cần gì | Quán nên chọn | Vì sao |');
     expect(fit).toContain('| Tình huống 1 | **Hủ tiếu Ông Giáo** | Lý do 1. |');
+    expect(buildComparisonTable(data)).toContain('| Hợp với ai |');
+    expect(buildComparisonTable(data)).toContain('| Vai 1 | Tình huống 1 |');
     expect(replaceTableIn('Câu dẫn.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nNhận xét sau bảng.\n\nCâu dẫn hai. | x | y | | 1 | 2 | | 3 | 4 |', '| T |')).toBe('Câu dẫn.\n\n| T |\n\nNhận xét sau bảng.');
     const article: Article = { title: 't', metaDescription: 'm', h1: 'h', excerpt: '', quickSummary: [], intro: 'i', sections: [{ heading: '1. Hủ tiếu Ông Giáo', level: 2, body: 'A.' }, { heading: '2. Hủ tiếu Cô Ba', level: 2, body: 'B.' }, { heading: '3. Hủ tiếu Dì Út', level: 2, body: 'C.' }, { heading: 'Cách tôi xếp hạng', level: 2, body: 'X.' }], faq: [], nextSteps: '', images: [], targetKeyword: 'k', secondaryKeywords: [], style: 'story' };
     const out = enforcePlaceSections(article, data);

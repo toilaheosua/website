@@ -430,9 +430,10 @@ export function buildComparisonTable(data: PlacesData): string {
     { head: 'Quán', cell: (p) => `**${p.rank}. ${p.name}**` },
     { head: 'Sao', cell: (p) => (p.rating ? p.rating.toFixed(1) : '') },
     { head: 'Lượt đánh giá', cell: (p) => (p.reviews ? fmtNum(p.reviews) : '') },
-    { head: 'Giá', cell: (p) => p.price },
+    // Không có cột giá: bậc giá Google Maps chung chung, dễ sai; giá cụ thể nói trong mục từng quán nếu ghi chú có
     { head: 'Giờ mở', cell: (p) => shortHours(p.openingHours) },
     { head: 'Nổi bật', cell: (p) => p.role?.label || p.summary?.signature[0] || p.summary?.praised[0] || '' },
+    { head: 'Hợp với ai', cell: (p) => p.role?.bestFor || p.summary?.bestFor[0] || '' },
   ];
   const cols = all.filter((c) => featured.some((p) => c.cell(p).trim()));
   return [row(cols.map((c) => c.head)), sepRow(cols.length), ...featured.map((p) => row(cols.map((c) => upFirst(c.cell(p)))))].join('\n');

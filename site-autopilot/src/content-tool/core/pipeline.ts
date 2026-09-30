@@ -17,7 +17,7 @@ import { enforcePlaceSections, featuredPlaces, placesForExport, placesJsonLd, st
 import { stepPlaces, stepReviewsAndPhotos, stepRoundupNotes } from './pipeline-roundup.js';
 import { stepBrandMedia, stepBrandNotes, stepBrandPlace } from './pipeline-brand.js';
 import { enforceBrandSections } from './brand.js';
-import { buildExportBundle, bundleToZip } from '../generator/photos.js';
+import { buildExportBundle, type ExportBundle } from '../generator/photos.js';
 
 /* ------------------------------------------------------------------ */
 /*  Định nghĩa bước                                                     */
@@ -34,7 +34,7 @@ export const STEP_META: Record<StepId, { name: string; desc: string }> = {
   write: { name: 'Viết bài', desc: 'Viết trọn bài 1000 đến 1500 từ theo bố cục và ghi chú' },
   edit: { name: 'Biên tập', desc: 'Lượt biên tập theo checklist chống dấu vết văn máy và phản hồi cổng chất lượng' },
   verify: { name: 'Kiểm tra và sửa', desc: 'Cổng chất lượng, so trùng với nguồn, điểm AI (API hoặc bạn nhập từ web Originality.ai), AI duyệt; tự sửa tối đa N vòng' },
-  export: { name: 'Xuất file', desc: 'Markdown, HTML, JSON cho site-autopilot, DOCX, văn bản thuần' },
+  export: { name: 'Hoàn tất', desc: 'Bài sẵn sàng: bấm Đăng bài để đưa lên website, hoặc tải file ở tab Bài viết' },
 };
 
 /** Tên và mô tả bước cho bài tổng hợp quán: ba bước đầu khác, các bước sau dùng chung. */
@@ -599,34 +599,28 @@ async function stepVerify(ctx: StepContext): Promise<StepResult> {
   return { message: msg, needsReview: !final.pass };
 }
 
+/** Gói bài (markdown, HTML, JSON, DOCX, ảnh) dựng khi cần: tải file ở tab Bài viết hoặc đăng lên site. */
+export async function buildRunBundle(db: Db, run: Run, opts: { exportsDir: string; baseUrl?: string }): Promise<ExportBundle> {
+  const cur = latestArticle(db, run.id);
+  if (!cur) throw new AppError('Chưa có bài để xuất.');
+  const places = run.options.kind !== 'web' ? db.getArtifact<PlacesData>(run.id, 'places')?.content ?? null : null;
+  const sourceUrls = places ? placesForExport(places).map((p) => String(p.mapsUrl)) : db.okSources(run.id).map((s) => s.url);
+  return buildExportBundle(cur.article, { keyword: run.keyword, dir: path.join(opts.exportsDir, String(run.id)), baseUrl: opts.baseUrl ?? '', places, sourceUrls, brand: run.options.kind === 'brand' ? run.options : null });
+}
+
+/**
+ * Bước cuối: không ghi file ra máy chủ nữa (bài đăng thẳng lên website bằng nút Đăng bài; file tải khi cần ở tab
+ * Bài viết). Chỉ ghi nhận bản bài cuối để tab Bài viết và nút Đăng bài biết bài đã sẵn sàng.
+ */
 async function stepExport(ctx: StepContext): Promise<StepResult> {
   const { run, db, config } = ctx;
   const current = latestArticle(db, run.id);
-  if (!current) throw new AppError('Chưa có bài để xuất.');
+  if (!current) throw new AppError('Chưa có bài để hoàn tất.');
   const dir = path.join(config.exportsDir, String(run.id));
-  fs.mkdirSync(dir, { recursive: true });
-  const base = slugify(run.keyword);
-  const a = current.article;
-  const places = run.options.kind !== 'web' ? db.getArtifact<PlacesData>(run.id, 'places')?.content ?? null : null;
-  const sourceUrls = places ? placesForExport(places).map((p) => String(p.mapsUrl)) : db.okSources(run.id).map((s) => s.url);
-  const files: Record<string, string> = {
-    md: `${base}.md`,
-    html: `${base}.html`,
-    json: `${base}.json`,
-    docx: `${base}.docx`,
-    txt: `${base}.txt`,
-    zip: `${base}.zip`,
-  };
-  // Ảnh: trỏ tới URL gốc ảnh nếu đã đặt; không thì HTML và DOCX nhúng ảnh, ZIP kèm thư mục photos
-  const bundle = await buildExportBundle(a, { keyword: run.keyword, dir, baseUrl: ctx.settings.photoBaseUrl, places, sourceUrls, brand: run.options.kind === 'brand' ? run.options : null });
-  fs.writeFileSync(path.join(dir, files.md!), bundle.md, 'utf8');
-  fs.writeFileSync(path.join(dir, files.html!), bundle.html, 'utf8');
-  fs.writeFileSync(path.join(dir, files.json!), JSON.stringify(bundle.json, null, 2), 'utf8');
-  fs.writeFileSync(path.join(dir, files.docx!), bundle.docx);
-  fs.writeFileSync(path.join(dir, files.txt!), bundle.txt, 'utf8');
-  fs.writeFileSync(path.join(dir, files.zip!), await bundleToZip(bundle, base));
-  db.saveArtifact(run.id, 'exports', { dir, files, articleKind: current.kind, articleVersion: current.version, createdAt: nowIso() });
-  const msg = `Đã xuất ${Object.keys(files).length} file vào ${dir}${bundle.photos.length ? ` (${bundle.photos.length} ảnh: ${bundle.photoMode === 'url' ? `trỏ tới ${ctx.settings.photoBaseUrl}` : 'kèm trong ZIP, nhúng trong HTML và DOCX'})` : ''}`;
+  const photosDir = path.join(dir, 'photos');
+  const photos = fs.existsSync(photosDir) ? fs.readdirSync(photosDir).length : 0;
+  db.saveArtifact(run.id, 'exports', { dir, files: {}, articleKind: current.kind, articleVersion: current.version, createdAt: nowIso() });
+  const msg = `Bài sẵn sàng: ${articleWordCount(current.article)} từ${photos ? `, ${photos} ảnh quán` : ''}. Bấm Đăng bài ở tab Bài viết để đưa lên website, hoặc tải file khi cần.`;
   ctx.log(msg);
   return { message: msg };
 }

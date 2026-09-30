@@ -7,7 +7,7 @@ import { Db } from '../../src/content-tool/db/index.js';
 import { createServices } from '../../src/content-tool/services/index.js';
 import { Worker } from '../../src/content-tool/core/worker.js';
 import { RunOptionsSchema, type PlacesData } from '../../src/content-tool/core/types.js';
-import { latestArticle } from '../../src/content-tool/core/pipeline.js';
+import { buildRunBundle, latestArticle } from '../../src/content-tool/core/pipeline.js';
 import { parseMapsUrl } from '../../src/content-tool/core/brand.js';
 import { moveRankingSectionLast, roundupTitle } from '../../src/content-tool/core/roundup.js';
 
@@ -78,13 +78,13 @@ describe('bài giới thiệu thương hiệu (mock)', () => {
     expect((gallery.body.match(/!\[/g) ?? []).length).toBe(6);
     expect(article.sections.indexOf(gallery)).toBeLessThan(article.sections.indexOf(contact));
     expect(article.images.filter((im) => im.src).length).toBe(6);
-    const ex = db.getArtifact<{ dir: string; files: Record<string, string> }>(run.id, 'exports')!.content;
-    const html = fs.readFileSync(path.join(ex.dir, ex.files.html!), 'utf8');
+    const bundle = await buildRunBundle(db, run, { exportsDir: loadConfig().exportsDir });
+    const html = bundle.html;
     expect(html).toContain('"@type":"Restaurant"');
     expect(html).toContain('"telephone":"0847 939 688"');
-    const json = JSON.parse(fs.readFileSync(path.join(ex.dir, ex.files.json!), 'utf8')) as { kindDetail: string; brand: { photos: string[]; name: string } };
+    const json = bundle.json as unknown as { kindDetail: string; brand: { photos: string[]; name: string } };
     expect(json.kindDetail).toBe('brand');
     expect(json.brand.photos.length).toBe(6);
-    expect(fs.existsSync(path.join(ex.dir, json.brand.photos[0]!))).toBe(true);
+    expect(fs.existsSync(path.join(loadConfig().exportsDir, String(run.id), json.brand.photos[0]!))).toBe(true);
   });
 });

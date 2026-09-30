@@ -7,7 +7,7 @@ import { Db } from '../../src/content-tool/db/index.js';
 import { createServices } from '../../src/content-tool/services/index.js';
 import { Worker } from '../../src/content-tool/core/worker.js';
 import { RunOptionsSchema, type Article, type CheckRound, type ManualScore, type Outline, type PendingScore, type PlacesData, type ResearchNotes, type SerpData } from '../../src/content-tool/core/types.js';
-import { latestArticle } from '../../src/content-tool/core/pipeline.js';
+import { buildRunBundle, latestArticle } from '../../src/content-tool/core/pipeline.js';
 import { createApp } from '../../src/content-tool/web/server.js';
 
 let tmp: string;
@@ -77,9 +77,11 @@ describe('pipeline mock đầu-cuối', () => {
     expect(done.finalScore?.pass).toBe(true);
     expect(done.finalScore?.words).toBeGreaterThan(900);
     expect(done.usage?.calls).toBeGreaterThan(3);
+    // Bước cuối không ghi file ra máy chủ nữa; gói bài dựng khi cần
     const ex = db.getArtifact<{ dir: string; files: Record<string, string> }>(run.id, 'exports')!.content;
-    for (const f of Object.values(ex.files)) expect(fs.existsSync(path.join(ex.dir, f))).toBe(true);
-    const json = JSON.parse(fs.readFileSync(path.join(ex.dir, ex.files.json!), 'utf8')) as { kind: string; sources: string[] };
+    expect(Object.keys(ex.files)).toEqual([]);
+    expect(fs.existsSync(path.join(ex.dir, `${done.slug}.md`))).toBe(false);
+    const json = (await buildRunBundle(db, run, { exportsDir: config.exportsDir })).json as unknown as { kind: string; sources: string[] };
     expect(json.kind).toBe('post');
     expect(json.sources.length).toBeGreaterThan(0);
   });
@@ -194,14 +196,14 @@ describe('bài tổng hợp quán theo khu vực (Google Maps mô phỏng)', () 
     expect(article.sections[0]!.body.split('\n').filter((l) => l.startsWith('| **')).length).toBe(8);
     const fitSec = article.sections.find((s) => /hợp ai/i.test(s.heading))!;
     expect(fitSec.body).toContain('| Bạn cần gì | Quán nên chọn | Vì sao |');
-    const ex = db.getArtifact<{ dir: string; files: Record<string, string> }>(run.id, 'exports')!.content;
-    const json = JSON.parse(fs.readFileSync(path.join(ex.dir, ex.files.json!), 'utf8')) as { places: { name: string; mapsUrl: string }[]; sources: string[] };
+    const bundle = await buildRunBundle(db, run, { exportsDir: config.exportsDir });
+    const json = bundle.json as unknown as { places: { name: string; mapsUrl: string }[]; sources: string[] };
     expect(json.places.length).toBe(8);
     expect(json.places[0]!.mapsUrl).toContain('google.com/maps');
-    const html = fs.readFileSync(path.join(ex.dir, ex.files.html!), 'utf8');
+    const html = bundle.html;
     expect(html).toContain('application/ld+json');
     expect(html).toContain('"@type":"ItemList"');
-    expect(fs.existsSync(path.join(ex.dir, featured.find((p) => p.photoFile)!.photoFile!))).toBe(true);
+    expect(fs.existsSync(path.join(config.exportsDir, String(run.id), featured.find((p) => p.photoFile)!.photoFile!))).toBe(true);
     // 1 lượt tọa độ + 2 trang quán + 16 đánh giá mỗi quán = 2 lượt × 8 quán
     expect(done.usage!.searchCalls).toBe(1 + 2 + 16);
   });

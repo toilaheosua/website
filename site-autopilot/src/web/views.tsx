@@ -968,7 +968,7 @@ export function ImportPostPage(props: { site: Site; error?: string }) {
   );
 }
 
-export function PostForm(props: { site: Site; pageId?: number; values: ManualPostInput; errors?: string[]; library: LibraryRow[]; notice?: string[]; heroLibraryId?: number }) {
+export function PostForm(props: { site: Site; pageId?: number; values: ManualPostInput; errors?: string[]; library: LibraryRow[]; notice?: string[]; noticeTitle?: string; heroLibraryId?: number; toolRunId?: number }) {
   const { site } = props;
   const v = props.values;
   const action = props.pageId ? `/sites/${site.id}/pages/${props.pageId}/edit` : `/sites/${site.id}/posts/new`;
@@ -981,7 +981,7 @@ export function PostForm(props: { site: Site; pageId?: number; values: ManualPos
       <p class="muted">Bài do bạn tự viết được đăng ngay, không qua AI viết lại. Cổng kiểm duyệt vẫn chấm và ghi góp ý để bạn tham khảo, không giữ bài lại.</p>
       {props.notice?.length ? (
         <div class="alert ok">
-          <b>Đã nhận diện bài từ file.</b> Kiểm tra lại rồi bấm Đăng ở cuối trang.
+          <b>{props.noticeTitle ?? 'Đã nhận diện bài từ file.'}</b> Kiểm tra lại rồi bấm Đăng ở cuối trang.
           <ul style="margin:6px 0 0;padding-left:18px">
             {props.notice.map((n) => (
               <li>{n}</li>
@@ -1000,6 +1000,7 @@ export function PostForm(props: { site: Site; pageId?: number; values: ManualPos
       ) : null}
       <form method="post" action={action}>
         {props.heroLibraryId ? <input type="hidden" name="heroLibraryId" value={String(props.heroLibraryId)} /> : null}
+        {props.toolRunId ? <input type="hidden" name="toolRunId" value={String(props.toolRunId)} /> : null}
         <div class="row">
           <div>
             <label>
