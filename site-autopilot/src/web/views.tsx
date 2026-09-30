@@ -1754,29 +1754,41 @@ export function IntegrationsForm(props: { integ: IntegrationView }) {
       <p class="muted small">Khóa được mã hóa trước khi lưu và không bao giờ hiển thị lại, chỉ thấy trạng thái và 4 ký tự cuối. Để trống ô nào là giữ nguyên khóa hiện có. Khóa nhập ở đây được ưu tiên hơn file .env và có hiệu lực ngay, không cần khởi động lại.</p>
       <form method="post" action="/settings/integrations">
         <fieldset>
+          <legend>API content: viết bài, model và ảnh</legend>
+          <div class="row">
+            <SecretField name="openrouter_key" label="OpenRouter API key (mặc định cho Tool Viết Content)" v={i.openrouter} help="Một key dùng được GPT, Gemini, DeepSeek, Claude... https://openrouter.ai/settings/keys, nạp credit trả trước." />
+            <SecretField name="anthropic_key" label="Claude API key (Anthropic)" v={i.anthropic} help="Viết trang chủ, liên hệ, chính sách, lập kế hoạch, kiểm duyệt; dự phòng cho tool khi OpenRouter lỗi. platform.claude.com → API Keys." />
+          </div>
+          <div class="row">
+            <div>
+              <label>Model Claude</label>
+              <input type="text" name="anthropic_model" value={i.anthropic.model} placeholder="claude-opus-5" />
+              <div class="help">claude-opus-5 chất lượng cao nhất, claude-sonnet-5 rẻ hơn.</div>
+            </div>
+            <SecretField name="deepseek_key" label="DeepSeek API key (tùy chọn)" v={i.deepseek} help="Nhà cung cấp thứ ba cho tool. platform.deepseek.com → API keys." />
+          </div>
+          <div class="row">
+            <SecretField name="serpapi_key" label="SerpAPI key (tìm top 10 Google)" v={i.serpapi} help="serpapi.com → Dashboard → API key; gói miễn phí 100 lượt mỗi tháng, khoảng 3 bài." />
+            <SecretField name="pexels_key" label="Pexels API key (ảnh stock)" v={i.pexels} help="pexels.com/api → Get Started, miễn phí. Chỉ dùng khi site bật ảnh stock." />
+          </div>
+          <div class="row">
+            <SecretField name="google_cse_key" label="Google Custom Search API key (thay SerpAPI, tùy chọn)" v={i.googleCse} />
+            <SecretField name="google_cse_cx" label="Search Engine ID (cx)" v={i.googleCseCx} />
+          </div>
+          <SecretField name="originality_key" label="Originality.ai API key (tùy chọn)" v={i.originality} help="Chỉ khi có gói Enterprise; luồng tự động mặc định không chấm AI." />
+          <div class="help">
+            Nhà cung cấp model, cách tìm kiếm, ngưỡng chất lượng của tool chỉnh ở <a href="/content/settings">Viết content → Cài đặt</a>.
+          </div>
+        </fieldset>
+        <fieldset>
           <legend>Cloudflare</legend>
           <div class="row">
-            <SecretField name="cloudflare_token" label="API Token" v={i.cloudflare} help="My Profile → API Tokens → Create Token → Custom token. Quyền: Zone Edit, DNS Edit, Zone Settings Edit, Zone WAF Edit, Bot Management Edit, Account Settings Read. Zone Resources: All zones from an account." />
+            <SecretField name="cloudflare_token" label="API Token" v={i.cloudflare} help="My Profile → API Tokens → Create Token → Custom token. Quyền: Zone Edit, DNS Edit, Zone Settings Edit, Zone WAF Edit, Bot Management Edit, Cache Purge, Cache Rules Edit, Account Settings Read. Zone Resources: All zones from an account." />
             <div>
               <label>Account ID</label>
               <input type="text" name="cloudflare_account_id" value={i.cloudflare.accountId} placeholder="32 ký tự, ở cột phải trang Overview của domain" />
             </div>
           </div>
-        </fieldset>
-        <fieldset>
-          <legend>Claude (viết nội dung)</legend>
-          <div class="row">
-            <SecretField name="anthropic_key" label="Anthropic API key" v={i.anthropic} help="platform.claude.com → API Keys." />
-            <div>
-              <label>Model</label>
-              <input type="text" name="anthropic_model" value={i.anthropic.model} placeholder="claude-opus-5" />
-              <div class="help">claude-opus-5 chất lượng cao nhất, claude-sonnet-5 rẻ hơn.</div>
-            </div>
-          </div>
-        </fieldset>
-        <fieldset>
-          <legend>Pexels (ảnh)</legend>
-          <SecretField name="pexels_key" label="Pexels API key" v={i.pexels} help="pexels.com/api → Get Started, miễn phí." />
         </fieldset>
         <fieldset>
           <legend>Google Search Console (tùy chọn)</legend>
@@ -1788,28 +1800,6 @@ export function IntegrationsForm(props: { integ: IntegrationView }) {
           ) : null}
           <label>Gmail của bạn để được thêm làm chủ sở hữu property</label>
           <input type="email" name="google_owner_email" value={i.google.ownerEmail} />
-        </fieldset>
-        <fieldset>
-          <legend>Google Maps (nhập ảnh thật của quán, tùy chọn)</legend>
-          <SecretField name="google_maps_key" label="Google Maps Platform API key" v={i.googleMaps} help="Google Cloud → APIs & Services → bật 'Places API (New)' → Credentials → API key. Cần gắn tài khoản thanh toán, dùng trong hạn mức miễn phí hàng tháng." />
-        </fieldset>
-        <fieldset>
-          <legend>Viết content (Tool Viết Content gộp trong bot)</legend>
-          <div class="row">
-            <SecretField name="openrouter_key" label="OpenRouter API key" v={i.openrouter} help="Nhà cung cấp model mặc định cho bài viết. https://openrouter.ai/settings/keys, nạp credit trả trước." />
-            <SecretField name="deepseek_key" label="DeepSeek API key (tùy chọn)" v={i.deepseek} help="platform.deepseek.com → API keys." />
-          </div>
-          <div class="row">
-            <SecretField name="serpapi_key" label="SerpAPI key" v={i.serpapi} help="Top 10 Google thật. serpapi.com → Dashboard → API key; gói miễn phí 100 lượt mỗi tháng, khoảng 3 bài." />
-            <SecretField name="originality_key" label="Originality.ai API key (tùy chọn)" v={i.originality} help="Chỉ khi có gói Enterprise; luồng tự động mặc định không chấm AI." />
-          </div>
-          <div class="row">
-            <SecretField name="google_cse_key" label="Google Custom Search API key (thay SerpAPI, tùy chọn)" v={i.googleCse} />
-            <SecretField name="google_cse_cx" label="Search Engine ID (cx)" v={i.googleCseCx} />
-          </div>
-          <div class="help">
-            Nhà cung cấp model, cách tìm kiếm, ngưỡng chất lượng của tool chỉnh ở <a href="/content/settings">Viết content → Cài đặt</a>.
-          </div>
         </fieldset>
         <fieldset>
           <legend>Telegram cảnh báo (tùy chọn)</legend>

@@ -27,7 +27,7 @@ Muốn chạy trên máy Windows cá nhân thay vì VPS cũng được: `npm run
 
 ## 3. Lấy các key
 
-Cloudflare, Claude, Pexels, Google và Telegram nhập trực tiếp trên dashboard tại **Cài đặt → Khóa API và dịch vụ**: khóa được mã hóa bằng `SESSION_SECRET` trước khi lưu, không hiển thị lại, chỉ thấy trạng thái và 4 ký tự cuối, và có hiệu lực ngay. Các biến trong `.env` bên dưới là cách thay thế cho người muốn cấu hình bằng file; khóa trên dashboard luôn được ưu tiên.
+Khóa nhập trực tiếp trên dashboard tại **Cài đặt → Khóa API và dịch vụ**, mục đầu tiên "API content" gồm OpenRouter, Claude, DeepSeek, SerpAPI, Pexels, Google Custom Search, Originality; sau đó Cloudflare, Google Search Console, Telegram: khóa được mã hóa bằng `SESSION_SECRET` trước khi lưu, không hiển thị lại, chỉ thấy trạng thái và 4 ký tự cuối, và có hiệu lực ngay. Các biến trong `.env` bên dưới là cách thay thế cho người muốn cấu hình bằng file; khóa trên dashboard luôn được ưu tiên.
 
 | Biến | Cách lấy |
 |---|---|
@@ -65,7 +65,7 @@ Mục **Viết content** trên thanh điều hướng là Tool Viết Content ti
 - **Viết thêm bài** trong trang site: chọn máy viết, kiểu bài (từ khóa / tổng hợp quán / thương hiệu), từ khóa hoặc để AI đề xuất. Bài tool xong tự nhập vào site: ảnh vào Kho ảnh (tag `viet-content`, ảnh Google Maps tag `google-maps`, bạn tự chịu trách nhiệm bản quyền), đường dẫn ảnh đổi, ảnh đầu tiên làm ảnh đầu bài, đoạn nhắc thương hiệu kèm liên kết nội bộ (site doanh nghiệp, tắt bằng ô Nhắc thương hiệu trong brief), qua cổng kiểm tra bằng code của bot (không AI duyệt lần hai), rồi dựng lại và xóa cache đúng URL. Bảng "Bài đang viết bằng Tool Viết Content" theo dõi tiến độ; bài viết sẵn trong mục Viết content nhập vào site bằng ô "Nhập bài đã viết sẵn".
 - **Dữ kiện thật**: brief, Entity và Bộ Câu Hỏi của site được đưa vào tool làm ghi chú cho từng bài.
 - **Originality.ai**: luồng tự động không chấm AI (skipAiDetection bật sẵn), chỉ kiểm tra nội bộ và AI duyệt của tool; đổi ở Viết content → Cài đặt.
-- **Khóa**: OpenRouter (nhà cung cấp model mặc định), SerpAPI, DeepSeek, Google CSE, Originality nhập ở Cài đặt → Khóa API và dịch vụ → mục Viết content. Cài đặt quy trình và ngưỡng của tool ở Viết content → Cài đặt.
+- **Khóa**: OpenRouter (nhà cung cấp model mặc định), SerpAPI, DeepSeek, Google CSE, Originality nhập ở Cài đặt → Khóa API và dịch vụ → mục "API content" (đầu trang). Cài đặt quy trình và ngưỡng của tool ở Viết content → Cài đặt.
 
 ## 5. Quản lý hàng ngày
 
