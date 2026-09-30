@@ -11,7 +11,7 @@ import { articleParts, articleWordCount, autoFixArticle, checkQuality, isPass, i
 import { checkDuplication, checkLibraryDuplication, dupToFeedback } from '../generator/dedup.js';
 import { articlePlainParts, articleToDocx, articleToHtmlDocument, articleToMarkdown, articleToPlainText, articleToSiteAutopilotJson } from '../generator/markdown.js';
 import type { ArtifactKind } from '../db/index.js';
-import type { PlacesData, RunKind } from '../core/types.js';
+import type { PlacesData, RunKind, RunOptions } from '../core/types.js';
 import { enforcePlaceSections, featuredPlaces, placesForExport, placesJsonLd, stripInjectedLines } from './roundup.js';
 import { stepPlaces, stepReviewsAndPhotos, stepRoundupNotes } from './pipeline-roundup.js';
 import { stepBrandMedia, stepBrandNotes, stepBrandPlace } from './pipeline-brand.js';
@@ -285,7 +285,7 @@ async function stepOutline(ctx: StepContext): Promise<StepResult> {
     run.options.kind !== 'web'
       ? { provider: 'mock', keyword: run.keyword, language: 'vi', organic: [], peopleAlsoAsk: notes.peopleAlsoAsk, relatedSearches: notes.secondaryKeywords, fetchedAt: nowIso() }
       : requireArtifact<SerpData>(ctx, 'serp', 'kết quả tìm kiếm');
-  const outline = await ctx.llm.buildOutline({ keyword: run.keyword, options: run.options, settings, notes, serp });
+  const outline = await ctx.llm.buildOutline({ keyword: run.keyword, options: effectiveOptions(db, run), settings, notes, serp });
   db.saveArtifact(run.id, 'outline', outline);
   const h2 = outline.sections.filter((s) => s.level === 2).length;
   const compared = outline.sections.filter((s) => s.comparisonItems.length >= 2).length;
@@ -324,15 +324,35 @@ export const ROUNDUP_BANNED: { re: RegExp; label: string }[] = [
 ];
 
 /** Giới hạn cho cổng chất lượng: bài tổng hợp quán có nhiều H2 hơn bài thường; bài quán và bài thương hiệu cấm câu than thiếu tư liệu. */
+/**
+ * Bài tổng hợp quán: trần số từ nới theo số quán được chọn. Mỗi quán cần chỗ cho dòng địa chỉ, giờ mở, đánh giá
+ * (tool chèn), một hàng bảng so sánh và vài câu nhận xét, khoảng 190 từ; phần chung (mở bài, bảng, hợp ai,
+ * cách xếp hạng, FAQ) khoảng 500 từ. 12 quán ép vào 1.800 từ thì bài luôn "quá dài" hoặc mục quán "quá mỏng",
+ * vòng sửa nào cũng báo lỗi mà không sửa được.
+ */
+export function roundupWordLimits(options: Pick<RunOptions, 'minWords' | 'maxWords'>, featured: number): { minWords: number; maxWords: number } {
+  const need = 500 + 190 * Math.max(featured, 1);
+  return { minWords: options.minWords, maxWords: Math.max(options.maxWords, need) };
+}
+
+/** Tùy chọn thật sự dùng cho model và cổng kiểm tra: bài tổng hợp quán lấy trần từ theo số quán đã chọn. */
+export function effectiveOptions(db: Db, run: Run): RunOptions {
+  if (run.options.kind !== 'roundup') return run.options;
+  const places = db.getArtifact<PlacesData>(run.id, 'places')?.content;
+  const n = places ? featuredPlaces(places).length : run.options.placesCount;
+  return { ...run.options, ...roundupWordLimits(run.options, n) };
+}
+
 export function qualityLimits(db: Db, run: Run): QualityLimits {
   const k = run.options.kind;
+  const options = effectiveOptions(db, run);
   if (k === 'roundup') {
     // Các mục quán phải khác nhau về câu mở đầu và cụm khen: tên quán lấy từ danh sách đã chọn
     const places = db.getArtifact<PlacesData>(run.id, 'places')?.content ?? null;
     const distinct = places ? { names: featuredPlaces(places).map((p) => p.name), dish: places.dish } : undefined;
-    return { minWords: run.options.minWords, maxWords: run.options.maxWords, maxH2: run.options.placesCount + 6, bannedPatterns: ROUNDUP_BANNED, ...(distinct ? { distinctSections: distinct } : {}) };
+    return { minWords: options.minWords, maxWords: options.maxWords, maxH2: run.options.placesCount + 6, bannedPatterns: ROUNDUP_BANNED, ...(distinct ? { distinctSections: distinct } : {}) };
   }
-  return { minWords: run.options.minWords, maxWords: run.options.maxWords, ...(k === 'brand' ? { bannedPatterns: ROUNDUP_BANNED } : {}) };
+  return { minWords: options.minWords, maxWords: options.maxWords, ...(k === 'brand' ? { bannedPatterns: ROUNDUP_BANNED } : {}) };
 }
 
 /** Các phần văn bản để so trùng: bỏ dòng địa chỉ, link, ảnh do tool chèn. */
@@ -344,7 +364,7 @@ async function stepWrite(ctx: StepContext): Promise<StepResult> {
   const { run, db, settings } = ctx;
   const notes = requireArtifact<ResearchNotes>(ctx, 'notes', 'ghi chú tư liệu');
   const outline = requireArtifact<Outline>(ctx, 'outline', 'bố cục');
-  const article = finalizeArticle(ctx, await ctx.llm.writeArticle({ keyword: run.keyword, options: run.options, settings, notes, outline }));
+  const article = finalizeArticle(ctx, await ctx.llm.writeArticle({ keyword: run.keyword, options: effectiveOptions(db, run), settings, notes, outline }));
   db.deleteArtifacts(run.id, ['edited', 'fixed', ...VERIFY_ARTIFACTS]);
   db.saveArtifact(run.id, 'draft', article);
   const msg = `Bản nháp ${articleWordCount(article)} từ, ${article.sections.length} mục, ${article.faq.length} FAQ`;
@@ -360,7 +380,7 @@ async function stepEdit(ctx: StepContext): Promise<StepResult> {
   if (!draft) throw new AppError('Chưa có bản nháp. Chạy lại từ bước "Viết bài".');
   const issues = checkQuality(draft.content, qualityLimits(db, run));
   const feedback = issuesToFeedback(issues);
-  const edited = finalizeArticle(ctx, await ctx.llm.editArticle({ keyword: run.keyword, options: run.options, settings, notes, outline, article: draft.content, feedback }));
+  const edited = finalizeArticle(ctx, await ctx.llm.editArticle({ keyword: run.keyword, options: effectiveOptions(db, run), settings, notes, outline, article: draft.content, feedback }));
   db.deleteArtifacts(run.id, ['fixed', ...VERIFY_ARTIFACTS]);
   db.saveArtifact(run.id, 'edited', edited);
   const msg = `Đã biên tập: ${articleWordCount(edited)} từ; bản nháp có ${issues.filter((i) => i.severity === 'major').length} lỗi bắt buộc, ${issues.filter((i) => i.severity === 'minor').length} lỗi nên sửa`;
@@ -427,6 +447,11 @@ async function stepVerify(ctx: StepContext): Promise<StepResult> {
   const scansUsed = () => db.listArtifacts<ManualScore>(run.id, 'ai_score').length;
   let lastRound: CheckRound | null = null;
   let round = db.listArtifacts<CheckRound>(run.id, 'check').length;
+  const options = effectiveOptions(db, run);
+  // Số lỗi chặn của một vòng: lỗi bắt buộc của cổng chất lượng, lỗi lớn AI duyệt, trùng nguồn, điểm AI
+  const blockers = (r: CheckRound) => r.quality.filter((i) => i.severity === 'major').length + (r.review?.issues.filter((i) => i.severity === 'major').length ?? 0) + (r.dup.pass ? 0 : 1) + (!r.ai.pass && !r.ai.skipped ? 1 : 0);
+  // Bản ít lỗi nhất qua các vòng: vòng sửa có thể làm bài tệ hơn (model viết lại quá tay), khi đó giữ bản này
+  let best: { article: Article; key: string; round: CheckRound } | null = null;
 
   while (true) {
     throwIfCancelled(ctx);
@@ -439,7 +464,7 @@ async function stepVerify(ctx: StepContext): Promise<StepResult> {
     const dup = pending ? pending.dup : checkDuplication(dedupParts(article), sources, { shingleSize: k, ratioMax: settings.dupRatioMax });
     if (!pending) dup.libraryMatches = checkLibraryDuplication(dedupParts(article), library, k);
     // AI duyệt chỉ giữ lỗi bắt buộc: góp ý "nên" làm vòng sửa kéo dài mà không đổi kết quả đạt hay không
-    const rawReview = pending ? pending.review! : await ctx.llm.reviewArticle({ keyword: run.keyword, options: run.options, settings, notes, outline, article });
+    const rawReview = pending ? pending.review! : await ctx.llm.reviewArticle({ keyword: run.keyword, options, settings, notes, outline, article });
     const review = { ...rawReview, issues: rawReview.issues.filter((i) => i.severity === 'major') };
     const reviewMajor = review.issues;
     const reviewPass = review.pass && reviewMajor.length === 0;
@@ -489,6 +514,7 @@ async function stepVerify(ctx: StepContext): Promise<StepResult> {
     }
     lastRound = { round, checkedAt: nowIso(), quality, qualityPass, dup, ai, review, pass, feedback };
     db.saveArtifact(run.id, 'check', lastRound);
+    if (!best || blockers(lastRound) < blockers(best.round)) best = { article, key: articleKey, round: lastRound };
     if (pending) db.deleteArtifacts(run.id, ['pending_score']);
     db.updateRun(run.id, { rounds: round });
     const aiText = ai.skipped ? (manual ? 'chưa chấm' : 'bỏ qua') : `${(ai.aiScore * 100).toFixed(1)}% ${ai.pass ? 'đạt' : 'chưa đạt'}`;
@@ -505,19 +531,26 @@ async function stepVerify(ctx: StepContext): Promise<StepResult> {
       .sort((a, b) => b.aiScore - a.aiScore)
       .slice(0, 25)
       .map((b) => b.text);
-    article = finalizeArticle(ctx, await ctx.llm.fixArticle({ keyword: run.keyword, options: run.options, settings, notes, outline, article, feedback, flaggedTexts: flagged, round }));
+    article = finalizeArticle(ctx, await ctx.llm.fixArticle({ keyword: run.keyword, options, settings, notes, outline, article, feedback, flaggedTexts: flagged, round }));
     const v = db.saveArtifact(run.id, 'fixed', article);
     articleKey = `fixed:${v}`;
     current = { article, kind: 'fixed', version: v, key: articleKey };
   }
 
-  const final = lastRound!;
+  let final = lastRound!;
+  if (!final.pass && best && best.key !== articleKey && blockers(best.round) < blockers(final)) {
+    // Các vòng sửa sau làm bài nhiều lỗi hơn: lấy lại bản của vòng ít lỗi nhất làm bản cuối
+    const v = db.saveArtifact(run.id, 'fixed', best.article);
+    article = best.article;
+    ctx.log(`Vòng ${final.round} có ${blockers(final)} lỗi chặn, nhiều hơn vòng ${best.round.round} (${blockers(best.round)}): giữ lại bản của vòng ${best.round.round} làm bản cuối (fixed v${v}).`, 'warn');
+    final = best.round;
+  }
   db.updateRun(run.id, {
     finalScore: { aiScore: final.ai.skipped ? null : final.ai.aiScore, dupRatio: final.dup.ratio, words: articleWordCount(article), pass: final.pass, rounds: round },
   });
   const msg = final.pass
     ? `Đạt sau ${round} vòng: AI ${final.ai.skipped ? 'không quét' : `${(final.ai.aiScore * 100).toFixed(1)}%${final.ai.provider === 'manual' ? ' (bạn nhập)' : ''}`}, trùng ${(final.dup.ratio * 100).toFixed(1)}%, ${articleWordCount(article)} từ`
-    : `Chưa đạt sau ${round} vòng kiểm tra (${settings.maxFixRounds} vòng sửa): ${final.feedback.filter((f) => f.startsWith('[BẮT BUỘC]')).length} lỗi bắt buộc còn lại${final.ai.skipped && final.ai.error ? `. ${final.ai.error}` : ''}. Xem tab Kiểm tra.`;
+    : `Chưa đạt sau ${round} vòng kiểm tra (${settings.maxFixRounds} vòng sửa): ${final.feedback.filter((f) => f.startsWith('[BẮT BUỘC]')).length} lỗi bắt buộc còn lại${final.round !== round ? ` (bản cuối là bản vòng ${final.round}, ít lỗi nhất)` : ''}${final.ai.skipped && final.ai.error ? `. ${final.ai.error}` : ''}. Xem tab Kiểm tra.`;
   return { message: msg, needsReview: !final.pass };
 }
 

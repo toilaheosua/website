@@ -1,6 +1,7 @@
 import type { Article, IssueSeverity, QualityIssue } from '../core/types.js';
 import { normText, wordCount } from '../core/util.js';
 import { headingMatches, stripInjectedLines } from '../core/roundup.js';
+import { htmlToMarkdown, separateTables } from './html-md.js';
 
 /**
  * Cổng kiểm duyệt chất lượng bằng code: cấu trúc, độ dài, câu sáo rỗng, dấu vết văn máy, nhồi từ khóa.
@@ -76,16 +77,21 @@ export function articleWordCount(a: Article): number {
   return articleParts(a).reduce((n, p) => n + wordCount(p.text), 0) + wordCount(a.h1) + a.quickSummary.reduce((n, s) => n + wordCount(s), 0);
 }
 
-/** Sửa tự động lỗi hình thức không cần AI: gạch ngang dài, thẻ HTML, heading # trong body, khoảng trắng thừa. */
+/**
+ * Sửa tự động lỗi hình thức không cần AI: HTML lỡ viết trong body chuyển thành markdown (bảng, danh sách, đoạn)
+ * thay vì xóa thẻ làm chữ dính liền; gạch ngang dài, heading # trong body, bảng dính văn bản, khoảng trắng thừa.
+ */
 export function autoFixArticle(a: Article): Article {
   const fixMd = (md: string) =>
-    md
-      .replace(/\s*[—–]\s*/g, ', ')
-      .replace(/<\/?[a-z][^>]*>/gi, '')
-      .replace(/^#{1,6}\s+(.+)$/gm, '**$1**')
-      .replace(/[ \t]+\n/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    separateTables(
+      htmlToMarkdown(md)
+        .replace(/\s*[—–]\s*/g, ', ')
+        .replace(/<\/?[a-z][^>]*>/gi, '')
+        .replace(/^#{1,6}\s+(.+)$/gm, '**$1**')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim(),
+    );
   const fixText = (t: string) => t.replace(/\s*[—–]\s*/g, ', ').replace(/<\/?[a-z][^>]*>/gi, '').replace(/\s+/g, ' ').trim();
   return {
     ...a,
@@ -156,7 +162,10 @@ export function checkSectionRepeats(a: Article, idx: number[], dish = ''): Quali
   if (shared.length || heavyPair) {
     const sample = (shared.length ? shared : [[heavyPair![1][0]!, heavyPair![0].split('-').map(Number)] as [string, number[]]]).slice(0, 3);
     const where = `sections.${sample[0]![1][sample[0]![1].length - 1]}`;
-    issues.push({ code: 'section_repeated_phrase', severity: 'major', where, message: `Cụm chữ lặp ở nhiều mục quán: ${sample.map(([sh, list]) => `"${sh}" (${list.map((i) => `"${a.sections[i]!.heading}"`).join(', ')})`).join('; ')}${heavyPair && !shared.length ? ` và ${heavyPair[1].length - 1} cụm khác giữa hai mục này` : ''}. Mỗi quán chọn chi tiết khen riêng có trong ghi chú của chính quán đó, không dùng lại cách nói của quán khác.` });
+    // Một cụm lặp ở đúng ba mục là chuyện thường khi bài có nhiều quán: chỉ "nên sửa"; từ hai cụm, một cụm ở bốn mục
+    // hoặc hai mục dùng chung ba cụm mới là lỗi bắt buộc
+    const heavy = heavyPair !== undefined || shared.length >= 2 || shared.some(([, list]) => list.length >= 4);
+    issues.push({ code: 'section_repeated_phrase', severity: heavy ? 'major' : 'minor', where, message: `Cụm chữ lặp ở nhiều mục quán: ${sample.map(([sh, list]) => `"${sh}" (${list.map((i) => `"${a.sections[i]!.heading}"`).join(', ')})`).join('; ')}${heavyPair && !shared.length ? ` và ${heavyPair[1].length - 1} cụm khác giữa hai mục này` : ''}. Mỗi quán chọn chi tiết khen riêng có trong ghi chú của chính quán đó, không dùng lại cách nói của quán khác.` });
   }
   return issues;
 }
