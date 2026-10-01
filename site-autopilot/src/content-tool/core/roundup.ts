@@ -9,6 +9,15 @@ import { normText, slugify, wordCount } from './util.js';
  */
 
 /** "hủ tiếu phan rang" → món "hủ tiếu", khu vực "Phan Rang" (dự phòng khi người dùng gõ một dòng). */
+/**
+ * Tên món hoặc loại quán không kèm chữ "quán" ở đầu: người dùng gõ "quán ốc" thì bài ghép "Top 12 quán quán ốc".
+ * Dùng cho mọi chỗ tool tự thêm chữ "quán"; từ khóa tìm Google Maps vẫn giữ nguyên chữ người dùng gõ.
+ */
+export function dishNoun(dish: string): string {
+  const t = dish.trim().replace(/^(quán|tiệm|nhà hàng|cửa hàng|hàng|chỗ|điểm)\s+(ăn\s+|bán\s+)?/iu, '').trim();
+  return t || dish.trim();
+}
+
 export function splitKeyword(keyword: string): { dish: string; area: string } {
   const words = keyword.trim().split(/\s+/);
   if (words.length < 3) return { dish: keyword.trim(), area: '' };
@@ -448,14 +457,17 @@ export function buildFitTable(data: PlacesData): string {
   return [row(['Bạn cần gì', 'Quán nên chọn', 'Vì sao']), sepRow(3), ...rows.map(row)].join('\n');
 }
 
-/** Bỏ mọi bảng model viết trong một mục (kể cả bảng viết trên một dòng), đặt bảng của tool ngay sau đoạn dẫn đầu tiên. */
-export function replaceTableIn(body: string, table: string): string {
+/**
+ * Bỏ mọi bảng model viết trong một mục (kể cả bảng viết trên một dòng), đặt bảng của tool ngay sau đoạn dẫn đầu tiên.
+ * onlyLead: chỉ giữ câu dẫn và bảng, bỏ phần nhận xét chung sau bảng (mục so sánh nhanh đi thẳng vào từng quán).
+ */
+export function replaceTableIn(body: string, table: string, opts: { onlyLead?: boolean } = {}): string {
   const paras = body
     .split(/\n\s*\n/)
     .map((p) => p.split('\n').filter((l) => !l.trim().startsWith('|') && (l.match(/\|\s*\|/g) ?? []).length < 2).join('\n').trim())
     .filter(Boolean);
   const [lead, ...rest] = paras;
-  return [lead, table, ...rest].filter(Boolean).join('\n\n');
+  return [lead, table, ...(opts.onlyLead ? [] : rest)].filter(Boolean).join('\n\n');
 }
 
 /**
@@ -469,10 +481,11 @@ export function injectRoundupTables(article: Article, data: PlacesData): Article
   const compare = buildComparisonTable(data);
   if (compare) {
     const idx = sections.findIndex((s) => s.level === 2 && COMPARE_HEADING_RE.test(s.heading) && !isPlace(s.heading));
-    if (idx >= 0) sections[idx]!.body = replaceTableIn(sections[idx]!.body, compare);
+    // Sau bảng đi thẳng vào từng quán: không giữ đoạn nhận xét chung của model
+    if (idx >= 0) sections[idx]!.body = replaceTableIn(sections[idx]!.body, compare, { onlyLead: true });
     else {
       const firstPlace = sections.findIndex((s) => s.level === 2 && isPlace(s.heading));
-      sections.splice(Math.max(firstPlace, 0), 0, { heading: `So sánh nhanh ${featured.length} quán ${data.dish} ở ${data.area}`, level: 2, body: `Bảng dưới đây gom sao, số lượt đánh giá, giá và giờ mở của ${featured.length} quán từ Google Maps để bạn chọn nhanh trước khi đọc chi tiết từng quán.\n\n${compare}` });
+      sections.splice(Math.max(firstPlace, 0), 0, { heading: `So sánh nhanh ${featured.length} quán ${dishNoun(data.dish)} ở ${data.area}`, level: 2, body: `Bảng dưới đây gom sao, số lượt đánh giá, giờ mở và điểm nổi bật của ${featured.length} quán từ Google Maps để bạn chọn nhanh trước khi đọc chi tiết từng quán.\n\n${compare}` });
     }
   }
   const fit = buildFitTable(data);
@@ -594,7 +607,7 @@ const RANKING_HEADING_RE = /xếp hạng|cách (tôi|mình|chúng tôi) (chọn|
 
 /** Tiêu đề chuẩn của bài tổng hợp: "Top 6 Quán Hủ Tiếu Phan Rang Được Đánh Giá Cao". */
 export function roundupTitle(count: number, dish: string, area: string): string {
-  return titleCaseWords(`Top ${count} quán ${dish} ${area} được đánh giá cao`);
+  return titleCaseWords(`Top ${count} quán ${dishNoun(dish)} ${area} được đánh giá cao`);
 }
 
 /** Mục "cách xếp hạng" luôn nằm cuối các mục, sau các quán và mục "hợp ai"; đầu bài chỉ nói về quán. */

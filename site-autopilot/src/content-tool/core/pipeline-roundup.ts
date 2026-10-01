@@ -4,7 +4,7 @@ import type { PlaceRole, PlacesData } from './types.js';
 import type { RawPlace } from '../services/types.js';
 import { AppError } from './errors.js';
 import { errorMessage, normText, nowIso } from './util.js';
-import { applyPlaceRoles, buildPlaces, buildRoundupNotes, featuredPlaces, heuristicClassify, photoFileName, placeForRole, renumberPlaces, splitKeyword, titleCaseWords } from './roundup.js';
+import { applyPlaceRoles, buildPlaces, buildRoundupNotes, dishNoun, featuredPlaces, heuristicClassify, photoFileName, placeForRole, renumberPlaces, splitKeyword, titleCaseWords } from './roundup.js';
 import { requireArtifact, throwIfCancelled, type StepContext, type StepResult } from './pipeline.js';
 
 /**
@@ -66,7 +66,8 @@ export async function stepPlaces(ctx: StepContext): Promise<StepResult> {
     ctx.log(`Model lọc quán lỗi (${errorMessage(err)}), phân loại toàn bộ bằng quy tắc`, 'warn');
   }
   const { candidates, meanRating } = buildPlaces({ raw, classes, dish, area, minReviews: settings.roundupMinReviews, bayesM: settings.roundupBayesM, featuredCount: run.options.placesCount, userNotes: run.options.placeNotes, center, radiusKm: settings.roundupRadiusKm, minRating: settings.roundupMinRating });
-  const data: PlacesData = { dish, area, query, center, collectedAt: nowIso(), pagesFetched: pages, candidates, minReviews: settings.roundupMinReviews, bayesM: settings.roundupBayesM, meanRating, minRating: settings.roundupMinRating };
+  // dish trong dữ liệu là tên món/loại quán không kèm chữ "quán" ("quán ốc" → "ốc") để title, heading, từ khóa không thành "quán quán ốc"
+  const data: PlacesData = { dish: dishNoun(dish), area, query, center, collectedAt: nowIso(), pagesFetched: pages, candidates, minReviews: settings.roundupMinReviews, bayesM: settings.roundupBayesM, meanRating, minRating: settings.roundupMinRating };
   db.saveArtifact(run.id, 'places', data);
   db.replaceSources(run.id, []);
   const featured = featuredPlaces(data);
