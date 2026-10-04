@@ -10,7 +10,7 @@ import { Worker } from '../src/core/worker.js';
 import { EntitySchema, SiteBriefSchema, WafSettingsSchema } from '../src/core/types.js';
 import { MockCloudflare } from '../src/services/mock.js';
 import { createApp } from '../src/web/server.js';
-import { buildCacheRule, RULE_TAG, urlsForChangedFiles } from '../src/generator/waf.js';
+import { buildCacheRule, RULE_TAG, urlsForChangedFiles, buildWwwRedirectRule } from '../src/generator/waf.js';
 
 let tmp: string;
 beforeAll(() => {
@@ -30,6 +30,14 @@ describe('Cache Everything', () => {
     expect(r.expression).toBe('(http.host eq "hutieuonggiao.com") or (http.host eq "www.hutieuonggiao.com")');
     expect(r.description.startsWith(RULE_TAG)).toBe(true);
     expect(r.action_parameters).toEqual({ cache: true, edge_ttl: { mode: 'override_origin', default: 2_592_000 }, browser_ttl: { mode: 'override_origin', default: 3600 } });
+  });
+
+  it('rule chuyển hướng www → tên miền chính: 301, giữ đường dẫn và query', () => {
+    const r = buildWwwRedirectRule('hutieuonggiao.com');
+    expect(r.action).toBe('redirect');
+    expect(r.expression).toBe('(http.host eq "www.hutieuonggiao.com")');
+    expect(r.action_parameters).toEqual({ from_value: { status_code: 301, target_url: { expression: 'concat("https://hutieuonggiao.com", http.request.uri.path)' }, preserve_query_string: true } });
+    expect(r.description).toContain('www → hutieuonggiao.com');
   });
 
   it('URL cần xóa cache từ tệp thay đổi', () => {
@@ -63,6 +71,11 @@ describe('Cache Everything', () => {
     expect(cacheRules).toHaveLength(1);
     expect(cacheRules[0]!.action).toBe('set_cache_settings');
     expect(site.cf_ruleset_ids.cache).toBe('rs_http_request_cache_settings');
+    const redirectRules = zone.rules['http_request_dynamic_redirect'] ?? [];
+    expect(redirectRules).toHaveLength(1);
+    expect(redirectRules[0]!.action).toBe('redirect');
+    expect(redirectRules[0]!.expression).toBe('(http.host eq "www.cache.test")');
+    expect(site.cf_ruleset_ids.redirect).toBe('rs_http_request_dynamic_redirect');
     const step = db.listSteps(id).find((s) => s.step === 'cf_settings')!;
     expect(step.message).toContain('Cache Everything');
 

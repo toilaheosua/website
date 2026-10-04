@@ -145,6 +145,7 @@ export function parseWaf(body: FormBody, current: WafSettings): WafSettings {
       browserTtl: Number.parseInt(str(body, 'cacheBrowserTtl'), 10) || current.cache.browserTtl,
       edgeTtl: Number.parseInt(str(body, 'cacheEdgeTtl'), 10) || current.cache.edgeTtl,
     },
+    wwwRedirect: str(body, 'wwwRedirect') === '1',
   });
 }
 

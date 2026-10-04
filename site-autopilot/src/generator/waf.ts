@@ -125,6 +125,27 @@ export function buildCacheRule(settings: WafSettings, domain: string): CfRule {
 }
 
 /**
+ * Redirect Rule (Single Redirects, phase http_request_dynamic_redirect): mọi yêu cầu tới www.tên-miền chuyển 301 về
+ * tên-miền chính, giữ nguyên đường dẫn và query. Không có rule này, www trả về bản sao của site (trùng nội dung)
+ * và sitemap trên www báo 404. Token cần quyền Zone → Dynamic Redirect → Edit.
+ */
+export function buildWwwRedirectRule(domain: string): CfRule {
+  return {
+    action: 'redirect',
+    expression: `(http.host eq "www.${domain}")`,
+    description: `${RULE_TAG} www → ${domain} (301)`,
+    enabled: true,
+    action_parameters: {
+      from_value: {
+        status_code: 301,
+        target_url: { expression: `concat("https://${domain}", http.request.uri.path)` },
+        preserve_query_string: true,
+      },
+    },
+  };
+}
+
+/**
  * URL cần xóa cache từ danh sách tệp thay đổi trong bản dựng:
  * x/index.html → /x/, index.html → /, tệp khác → /đường/dẫn; mỗi URL thêm bản www.
  * Đổi HTML thì trang blog và sitemap cũng đổi (danh sách bài, ngày cập nhật) nên các tệp đó đã nằm trong danh sách đổi.

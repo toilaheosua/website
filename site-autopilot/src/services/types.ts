@@ -22,7 +22,7 @@ export interface CfDnsRecord {
   proxied: boolean;
 }
 
-export type CfPhase = 'http_request_firewall_custom' | 'http_ratelimit' | 'http_request_cache_settings';
+export type CfPhase = 'http_request_firewall_custom' | 'http_ratelimit' | 'http_request_cache_settings' | 'http_request_dynamic_redirect';
 
 export interface CfRule {
   id?: string;

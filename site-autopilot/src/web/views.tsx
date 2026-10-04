@@ -1801,7 +1801,7 @@ export function IntegrationsForm(props: { integ: IntegrationView }) {
         <fieldset>
           <legend>Cloudflare</legend>
           <div class="row">
-            <SecretField name="cloudflare_token" label="API Token" v={i.cloudflare} help="My Profile → API Tokens → Create Token → Custom token. Quyền: Zone Edit, DNS Edit, Zone Settings Edit, Zone WAF Edit, Bot Management Edit, Cache Purge, Cache Rules Edit, Account Settings Read. Zone Resources: All zones from an account." />
+            <SecretField name="cloudflare_token" label="API Token" v={i.cloudflare} help="My Profile → API Tokens → Create Token → Custom token. Quyền: Zone Edit, DNS Edit, Zone Settings Edit, Zone WAF Edit, Bot Management Edit, Cache Purge, Cache Rules Edit, Dynamic Redirect Edit, Account Settings Read. Zone Resources: All zones from an account." />
             <div>
               <label>Account ID</label>
               <input type="text" name="cloudflare_account_id" value={i.cloudflare.accountId} placeholder="32 ký tự, ở cột phải trang Overview của domain" />
@@ -2061,6 +2061,13 @@ export function SettingsPage(props: { waf: WafSettings; general: GeneralSettings
               </div>
             </div>
             <div class="help">Mỗi lần sửa trang, viết bài mới hay đổi giao diện, hệ thống chỉ xóa cache đúng các URL thay đổi (trang đó, trang blog, sitemap, CSS, ảnh), các trang khác vẫn được phục vụ từ cache. Token Cloudflare cần thêm quyền Zone → Cache Rules → Edit.</div>
+          </fieldset>
+          <fieldset>
+            <legend>Chuyển hướng www (Redirect Rule)</legend>
+            <label>
+              <input type="checkbox" name="wwwRedirect" value="1" checked={props.waf.wwwRedirect} /> Chuyển 301 mọi truy cập www.tên-miền về tên miền chính, giữ nguyên đường dẫn và query
+            </label>
+            <div class="help">Không có rule này, bản www trả về một bản sao của site (Google có thể coi là hai site trùng nội dung) và sitemap trên www báo 404. Token Cloudflare cần thêm quyền Zone → Dynamic Redirect → Edit.</div>
           </fieldset>
           <div class="actions" style="margin-top:12px">
             <button class="btn" type="submit">

@@ -6,7 +6,7 @@ import type { PageContent, SitePlan } from './types.js';
 import { AppError, ConfigError, TransientError } from './errors.js';
 import { errorMessage, nowIso, randomHex, slugify } from './util.js';
 import { makeTheme } from '../generator/themes.js';
-import { buildCacheRule, buildCustomRules, buildRateLimitRule, mergeRules, RULE_TAG, urlsForChangedFiles } from '../generator/waf.js';
+import { buildCacheRule, buildCustomRules, buildRateLimitRule, mergeRules, RULE_TAG, urlsForChangedFiles, buildWwwRedirectRule } from '../generator/waf.js';
 import { collectImageSlots, fetchImagesForSlots } from '../generator/images.js';
 import { buildSite, siteDirs } from '../generator/builder.js';
 import { ROUTES, UI_STRINGS } from '../generator/render-context.js';
@@ -146,6 +146,13 @@ const cfSettings: StepDef = {
       warnings.push(`Cache Everything: ${errorMessage(err)} (token cần quyền Zone - Cache Rules - Edit)`);
       ctx.log('warn', `Không cài được rule Cache Everything: ${errorMessage(err)}`);
     }
+    try {
+      const r = await applyWwwRedirect(ctx);
+      if (r) applied.push(r);
+    } catch (err) {
+      warnings.push(`Chuyển hướng www: ${errorMessage(err)} (token cần quyền Zone - Dynamic Redirect - Edit)`);
+      ctx.log('warn', `Không cài được rule chuyển hướng www: ${errorMessage(err)}`);
+    }
     const msg = `Đã đặt ${applied.join(', ')}${warnings.length ? `. Cảnh báo: ${warnings.join('; ')}` : ''}`;
     return { status: 'done', message: msg, output: { applied, warnings } };
   },
@@ -194,6 +201,20 @@ export async function applyCacheRule(ctx: StepContext): Promise<string> {
   const res = await cloudflare.replacePhaseRules(zoneId, 'http_request_cache_settings', [...ours, ...foreign]);
   ctx.updateSite({ cf_ruleset_ids: { ...ctx.site.cf_ruleset_ids, cache: res.rulesetId } });
   return ours.length ? ours[0]!.description.replace(`${RULE_TAG} `, '') : 'đã gỡ Cache Everything';
+}
+
+/** Redirect Rule www → tên miền chính; tắt trong cài đặt thì gỡ rule của bot, giữ rule người dùng tự thêm. */
+export async function applyWwwRedirect(ctx: StepContext): Promise<string> {
+  const zoneId = requireZone(ctx);
+  const { cloudflare } = ctx.services;
+  const settings = ctx.services.wafSettings();
+  const existing = await cloudflare.getPhaseRules(zoneId, 'http_request_dynamic_redirect');
+  const foreign = existing.rules.filter((r) => !(r.description ?? '').startsWith(RULE_TAG));
+  const ours = settings.wwwRedirect ? [buildWwwRedirectRule(ctx.site.domain)] : [];
+  if (!ours.length && existing.rules.length === foreign.length) return '';
+  const res = await cloudflare.replacePhaseRules(zoneId, 'http_request_dynamic_redirect', [...ours, ...foreign]);
+  ctx.updateSite({ cf_ruleset_ids: { ...ctx.site.cf_ruleset_ids, redirect: res.rulesetId } });
+  return ours.length ? ours[0]!.description.replace(`${RULE_TAG} `, '') : 'đã gỡ chuyển hướng www';
 }
 
 /**

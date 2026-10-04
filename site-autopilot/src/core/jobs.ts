@@ -6,7 +6,7 @@ import type { StepDef } from './pipeline.js';
 import { makeStepContext } from './context.js';
 import { AppError } from './errors.js';
 import { errorMessage, safeJsonParse, slugify } from './util.js';
-import { applyCacheRule, applyRateLimit, applyWafRules, generateAndSavePage, refreshSiteImages, requiredPages, reviewContent, runBuild, runDeploy, submitIndexNow, type RequiredPage } from './steps.js';
+import { applyCacheRule, applyRateLimit, applyWafRules, applyWwwRedirect, generateAndSavePage, refreshSiteImages, requiredPages, reviewContent, runBuild, runDeploy, submitIndexNow, type RequiredPage } from './steps.js';
 import { isPass, type ContentReview } from '../generator/quality.js';
 import { answeredCount, mergeEntitySuggestion } from './interview.js';
 import { buildApplyScript, buildFail2banConf, buildNginxHttpConf, buildNginxServerConf, summarize } from '../generator/host-security.js';
@@ -318,8 +318,14 @@ const handlers: Record<string, Handler> = {
     } catch (err) {
       ctx.log('warn', `Rule Cache Everything: ${errorMessage(err)} (token cần quyền Zone - Cache Rules - Edit)`);
     }
-    ctx.log('info', `Đồng bộ WAF: ${a}; ${b}${cache ? `; cache: ${cache}` : ''}`);
-    return { waf: a, ratelimit: b, cache };
+    let redirect = '';
+    try {
+      redirect = await applyWwwRedirect(ctx);
+    } catch (err) {
+      ctx.log('warn', `Rule chuyển hướng www: ${errorMessage(err)} (token cần quyền Zone - Dynamic Redirect - Edit)`);
+    }
+    ctx.log('info', `Đồng bộ WAF: ${a}; ${b}${cache ? `; cache: ${cache}` : ''}${redirect ? `; ${redirect}` : ''}`);
+    return { waf: a, ratelimit: b, cache, redirect };
   },
 
   async sync_all_waf(env) {

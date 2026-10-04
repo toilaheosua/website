@@ -228,6 +228,8 @@ export const WafSettingsSchema = z.object({
       edgeTtl: z.number().int().min(60).default(2_592_000),
     })
     .prefault({}),
+  /** Redirect Rule: www.tên-miền → tên-miền (301, giữ đường dẫn và query) để Google không coi là hai site trùng */
+  wwwRedirect: z.boolean().default(true),
 });
 export type WafSettings = z.infer<typeof WafSettingsSchema>;
 
