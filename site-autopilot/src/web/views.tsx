@@ -1010,7 +1010,7 @@ export function PostForm(props: { site: Site; pageId?: number; values: ManualPos
           </div>
           <div>
             <label>
-              Đường dẫn <small>để trống = tự tạo từ tiêu đề; nằm dưới /blog/</small>
+              Đường dẫn <small>để trống = tự tạo từ từ khóa mục tiêu (không có thì từ tiêu đề); nằm dưới /blog/</small>
             </label>
             <input type="text" name="slug" value={v.slug} class="mono" placeholder="vi-du-ten-bai" />
           </div>

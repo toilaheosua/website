@@ -71,9 +71,10 @@ export function parseLines(text: string): string[] {
 }
 
 /** Đường dẫn bài viết: blog/<slug>, tự sinh từ tiêu đề nếu để trống. */
-export function postSlug(blogPrefix: string, slugInput: string, title: string): string {
+/** Đường dẫn bài: ô đường dẫn nếu có; để trống thì tự tạo từ từ khóa mục tiêu, không có từ khóa thì từ tiêu đề. */
+export function postSlug(blogPrefix: string, slugInput: string, title: string, keyword = ''): string {
   const raw = slugInput.trim().replace(/^\/+|\/+$/g, '').replace(new RegExp(`^${blogPrefix}/`), '');
-  const s = slugify(raw || title);
+  const s = slugify(raw || keyword.trim() || title);
   return `${blogPrefix}/${s}`;
 }
 

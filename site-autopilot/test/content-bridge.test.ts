@@ -154,6 +154,7 @@ describe('Tool Viết Content gộp trong bot', () => {
     expect(db.getToolRun(loose.id)?.status).not.toBe('imported');
     const prep = await bridge.prepareImport(db.getSite(id)!, bridge.db.getRun(loose.id)!, { brandInBody: true });
     expect(prep.values.body).toContain('[Hủ Tiếu Ông Giáo](/)');
+    expect(prep.values.slug).toBe('hu-tieu-go-phan-rang'); // đường dẫn theo từ khóa mục tiêu
     expect(formHtml).toContain('[Hủ Tiếu Ông Giáo](/)');
     const postForm = new URLSearchParams({ ...prep.values, title: 'Hủ tiếu gõ Phan Rang: chọn quán thế nào cho đúng', slug: 'hu-tieu-go-phan-rang', toolRunId: String(loose.id) });
     const posted = await app.request(`/sites/${id}/posts/new`, { method: 'POST', body: postForm, headers: { cookie, 'Content-Type': 'application/x-www-form-urlencoded' } });

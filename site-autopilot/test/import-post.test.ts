@@ -182,17 +182,17 @@ describe('nhận diện bài từ gói', () => {
     const form: Record<string, string> = { heroLibraryId: String(heroId), title: field('title'), slug: field('slug'), h1: field('h1'), targetKeyword: field('targetKeyword'), metaDescription: area('metaDescription'), excerpt: field('excerpt'), heroImageAlt: field('heroImageAlt'), keyTakeaways: area('keyTakeaways'), body: decode(bodyField).trim(), faq: area('faq') };
     const created = await app.request(`/sites/${id}/posts/new`, { method: 'POST', body: new URLSearchParams(form), headers: { cookie, 'Content-Type': 'application/x-www-form-urlencoded' } });
     expect(created.status).toBe(302);
-    const page = db.listPages(id).find((p) => p.slug === 'blog/6-quan-hu-tieu-phan-rang')!;
+    const page = db.listPages(id).find((p) => p.slug === 'blog/hu-tieu-phan-rang')!;
     expect(page).toBeDefined();
     expect(page.content.faq).toHaveLength(2);
     expect(page.content.keyTakeaways).toHaveLength(2);
     expect(page.content.sections.map((s) => s.heading)).toEqual(['1. Hủ Tiếu Nam Vang Ông Giáo: quán đạt 4.8 sao hiếm hoi', '2. Quán Sa Đéc: giá mềm nhất', 'Trước khi bạn đi thử']);
-    const hero = db.listImages(id).find((i) => i.key === 'post.6-quan-hu-tieu-phan-rang.hero');
+    const hero = db.listImages(id).find((i) => i.key === 'post.hu-tieu-phan-rang.hero');
     expect(hero?.provider).toBe('manual');
     await worker.tick();
     await worker.drain(30_000);
     const outDir = path.join(config.sitesDir, 'import.test', 'out');
-    const postHtml = fs.readFileSync(path.join(outDir, 'blog', '6-quan-hu-tieu-phan-rang', 'index.html'), 'utf8');
+    const postHtml = fs.readFileSync(path.join(outDir, 'blog', 'hu-tieu-phan-rang', 'index.html'), 'utf8');
     const libNames = lib.map((l) => path.basename(l.file));
     for (const n of libNames) {
       expect(postHtml).toContain(`/assets/img/${n}`);

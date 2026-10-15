@@ -290,7 +290,9 @@ export class ContentToolBridge {
         notes.push('Đã thêm đoạn nhắc thương hiệu kèm liên kết nội bộ ở cuối bài; sửa hoặc xóa tùy ý');
       }
     }
-    return { values: { ...parsed.values, body }, heroLibraryId, saved, notes };
+    // Đường dẫn bài lấy theo từ khóa mục tiêu (quy ước của site), không theo tiêu đề
+    const slug = parsed.values.targetKeyword.trim() ? slugify(parsed.values.targetKeyword) : parsed.values.slug;
+    return { values: { ...parsed.values, body, slug }, heroLibraryId, saved, notes };
   }
 
   /** Đoạn nhắc thương hiệu kèm liên kết nội bộ cho site doanh nghiệp; site vệ tinh hoặc tắt "Nhắc thương hiệu" thì không có. */

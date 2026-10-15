@@ -9,7 +9,7 @@ import type { Services } from '../services/types.js';
 import type { Worker } from '../core/worker.js';
 import { dependentsOf, type StepDef, type StepId } from '../core/pipeline.js';
 import { PageContentSchema } from '../core/types.js';
-import { errorMessage, isValidDomain } from '../core/util.js';
+import { errorMessage, isValidDomain, slugify } from '../core/util.js';
 import { makeTheme } from '../generator/themes.js';
 import { siteDirs } from '../generator/builder.js';
 import { validateEntity } from '../generator/schema.js';
@@ -598,7 +598,7 @@ export function createApp(deps: WebDeps): Hono {
     const v = readPostForm(body);
     const errors = validatePost(site.id, v);
     const blog = ROUTES[site.brief.language].blog;
-    const slug = postSlug(blog, v.slug, v.title);
+    const slug = postSlug(blog, v.slug, v.title, v.targetKeyword);
     const toolRunIdRaw = Number.parseInt(str(body, 'toolRunId'), 10);
     const toolRunId = Number.isFinite(toolRunIdRaw) ? toolRunIdRaw : undefined;
     if (db.getPageBySlug(site.id, slug)) errors.push(`Đường dẫn /${slug}/ đã có bài khác`);
@@ -655,7 +655,7 @@ export function createApp(deps: WebDeps): Hono {
           parsed.notes.push(`Không đọc được ảnh ${img.fileName}: ${errorMessage(err)}`);
         }
       }
-      const values = { ...parsed.values, body: rewriteImageRefs(parsed.values.body, mapping, parsed.missingImages) };
+      const values = { ...parsed.values, body: rewriteImageRefs(parsed.values.body, mapping, parsed.missingImages), slug: parsed.values.targetKeyword.trim() ? slugify(parsed.values.targetKeyword) : parsed.values.slug };
       const notes = [...parsed.notes, `Đã đưa ${saved} ảnh vào Kho ảnh thật (tag nhap-bai)${parsed.missingImages.length ? `; đã bỏ ${parsed.missingImages.length} ảnh không có trong gói: ${parsed.missingImages.slice(0, 4).join(', ')}` : ''}`];
       const useHero = String(body.firstAsHero ?? '') === '1';
       if (useHero && heroLibraryId) notes.push('Ảnh đầu tiên sẽ được dùng làm ảnh đầu bài, đổi sau trong Chỉnh sửa trực quan nếu muốn');
@@ -680,7 +680,7 @@ export function createApp(deps: WebDeps): Hono {
     const v = readPostForm(body);
     const errors = validatePost(site.id, v);
     const blog = ROUTES[site.brief.language].blog;
-    const slug = postSlug(blog, v.slug, v.title);
+    const slug = postSlug(blog, v.slug, v.title, v.targetKeyword);
     const other = db.getPageBySlug(site.id, slug);
     if (other && other.id !== page.id) errors.push(`Đường dẫn /${slug}/ đã có bài khác`);
     if (errors.length) return render(c, `Soạn ${page.title}`, 'sites', PostForm({ site, pageId: page.id, values: v, errors, library: db.listLibrary(site.id) }));
@@ -711,7 +711,7 @@ export function createApp(deps: WebDeps): Hono {
     let slug = page.slug;
     if (page.kind === 'post') {
       const blog = ROUTES[site.brief.language].blog;
-      slug = postSlug(blog, str(body, 'slug'), content.title);
+      slug = postSlug(blog, str(body, 'slug'), content.title, content.targetKeyword ?? '');
       const other = db.getPageBySlug(site.id, slug);
       if (other && other.id !== page.id) {
         flash(c, { type: 'err', text: `Đường dẫn /${slug}/ đã có bài khác.` });

@@ -59,6 +59,9 @@ describe('soạn bài thủ công', () => {
       { question: 'Có giao không?', answer: 'Có, 3 km.' },
     ]);
     expect(postSlug('blog', '', 'Chọn quán hủ tiếu ngon ở Phan Rang')).toBe('blog/chon-quan-hu-tieu-ngon-o-phan-rang');
+    // Để trống đường dẫn: ưu tiên từ khóa mục tiêu, rồi mới tới tiêu đề; ô đường dẫn có giá trị thì giữ
+    expect(postSlug('blog', '', 'Chọn quán hủ tiếu ngon ở Phan Rang', 'bánh căn Phan Rang')).toBe('blog/banh-can-phan-rang');
+    expect(postSlug('blog', 'duong-dan-rieng', 'Tiêu đề', 'bánh căn Phan Rang')).toBe('blog/duong-dan-rieng');
     expect(postSlug('blog', '/blog/bai-cua-toi/', 'x')).toBe('blog/bai-cua-toi');
   });
 
@@ -110,23 +113,24 @@ describe('soạn bài thủ công', () => {
     const libName = lib.file.split('/').pop()!;
     const created = await post(`/sites/${id}/posts/new`, { title: 'Chọn quán hủ tiếu ngon ở Phan Rang: 5 dấu hiệu', slug: '', h1: '', metaDescription: 'Năm dấu hiệu nhận biết tô hủ tiếu nấu đúng kiểu Nam Vang, đọc để chọn đúng quán ngay lần đầu.', targetKeyword: 'hủ tiếu phan rang', excerpt: 'Năm dấu hiệu.', keyTakeaways: 'Nước lèo trong\nSợi dai', body: BODY + `\n![Tô hủ tiếu](/assets/img/${libName})\n`, faq: 'Khô hay nước?\nTùy khẩu vị.', heroImageAlt: '' });
     expect(created.status).toBe(302);
-    const page = db.listPages(id).find((p) => p.slug === 'blog/chon-quan-hu-tieu-ngon-o-phan-rang-5-dau-hieu')!;
+    // Đường dẫn tự tạo từ từ khóa mục tiêu "hủ tiếu phan rang", không theo tiêu đề
+    const page = db.listPages(id).find((p) => p.slug === 'blog/hu-tieu-phan-rang')!;
     expect(page).toBeDefined();
     expect(page.status).toBe('published');
     expect(page.review?.approvedBy).toBe('user');
-    expect(db.getSite(id)!.plan!.posts.some((p) => p.slug === 'chon-quan-hu-tieu-ngon-o-phan-rang-5-dau-hieu')).toBe(true);
+    expect(db.getSite(id)!.plan!.posts.some((p) => p.slug === 'hu-tieu-phan-rang')).toBe(true);
     await worker.tick();
     await worker.drain(30_000);
-    expect(fs.existsSync(path.join(outDir, 'blog', 'chon-quan-hu-tieu-ngon-o-phan-rang-5-dau-hieu', 'index.html'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'blog', 'hu-tieu-phan-rang', 'index.html'))).toBe(true);
     expect(fs.readFileSync(path.join(outDir, 'blog', 'index.html'), 'utf8')).toContain('Năm dấu hiệu.');
     // ảnh kho chèn trong bài được sao chép vào bản dựng và hiện trong HTML
     expect(fs.existsSync(path.join(outDir, 'assets', 'img', libName))).toBe(true);
-    expect(fs.readFileSync(path.join(outDir, 'blog', 'chon-quan-hu-tieu-ngon-o-phan-rang-5-dau-hieu', 'index.html'), 'utf8')).toContain(`src="/assets/img/${libName}"`);
+    expect(fs.readFileSync(path.join(outDir, 'blog', 'hu-tieu-phan-rang', 'index.html'), 'utf8')).toContain(`src="/assets/img/${libName}"`);
     const detail = await (await app.request(`/sites/${id}/pages/${page.id}`, { headers: { cookie } })).text();
     expect(detail).toContain(`/sites/${id}/images/file/${libName}`);
 
     // sửa SEO + đổi đường dẫn
-    db.upsertImage({ site_id: id, key: `post.chon-quan-hu-tieu-ngon-o-phan-rang-5-dau-hieu.hero`, provider: 'none', provider_id: null, query: null, file: '', width: null, height: null, alt: '', credit: '', credit_url: '' });
+    db.upsertImage({ site_id: id, key: `post.hu-tieu-phan-rang.hero`, provider: 'none', provider_id: null, query: null, file: '', width: null, height: null, alt: '', credit: '', credit_url: '' });
     const meta = await post(`/sites/${id}/pages/${page.id}/meta`, { title: 'Chọn quán hủ tiếu ngon ở Phan Rang: 5 dấu hiệu thật', slug: 'chon-quan-hu-tieu', metaDescription: page.content.metaDescription, h1: 'Chọn quán hủ tiếu', targetKeyword: 'quán hủ tiếu phan rang', heroImageAlt: 'Tô hủ tiếu', excerpt: 'Mới.' });
     expect(meta.status).toBe(302);
     const renamed = db.getPage(page.id)!;
@@ -159,6 +163,6 @@ describe('soạn bài thủ công', () => {
     await worker.tick();
     await worker.drain(30_000);
     expect(fs.existsSync(path.join(outDir, 'blog', 'chon-quan-hu-tieu', 'index.html'))).toBe(false);
-    expect(fs.existsSync(path.join(outDir, 'blog', 'chon-quan-hu-tieu-ngon-o-phan-rang-5-dau-hieu', 'index.html'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, 'blog', 'hu-tieu-phan-rang', 'index.html'))).toBe(false);
   }, 120000);
 });
